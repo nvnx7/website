@@ -1,0 +1,128 @@
+---
+import PageLayout from "@/layouts/Base";
+import PostPreview from "@/components/blog/PostPreview";
+import SocialList from "@/components/SocialList";
+import { getAllPosts, sortMDByDate } from "@/utils";
+
+const MAX_POSTS = 10;
+const allPosts = await getAllPosts();
+const allPostsByDate = sortMDByDate(allPosts).slice(0, MAX_POSTS);
+
+const projects: Array<{ title: string; desc: string; href: string }> = [
+	{
+		title: "evm-rs",
+		desc: "A rust implementation of the ethereum virtual machine.",
+		href: "https://github.com/nvnx7/evm-rs",
+	},
+  {
+  title: "Lux Wallet",
+  desc: "Lux is a wallet browser extenstion for Lukso network.",
+  href: "https://github.com/nvnx7/lux-wallet",
+ },
+ {
+  title: "Tsunami",
+  desc: "Private on-chain token streaming protocol using ZKPs.",
+  href: "https://github.com/nvnx7/tsunami-monorepo",
+ },
+	{
+		title: "hardhat-test-utils",
+		desc: "Test utilities for testing smart-contracts in Hardhat projects.",
+		href: "https://github.com/nvnx7/hardhat-test-utils",
+	},
+	{
+		title: "Attack Simulation Bot",
+		desc: "Forta agent that simulates attacks involving detected suspicious addresses.",
+		href: "https://github.com/nvnx7/forta-attack-simulation-bot",
+	},
+	{
+		title: "Artista",
+		desc: "Android app written in Kotlin to perform style-transfer using DL model at the edge.",
+		href: "https://github.com/nvnx7/Artista",
+	},
+	{
+		title: "Gaze Pointer",
+		desc: "Mouse pointer controller with human eye gaze. Built with Intel OpenVino.",
+		href: "https://github.com/nvnx7/eye-gaze-pointer-controller",
+	},
+	{
+		title: "Philosofy",
+		desc: "A native feature rich image editor app for Android, written in Java.",
+		href: "https://github.com/nvnx7/Philosofy",
+	},
+];
+
+const publications: Array<{ title: string; href: string }> = [
+  {
+    title: "zkFi: Privacy-Preserving and Regulation Compliant Transactions using Zero Knowledge Proofs.",
+    href: "https://arxiv.org/abs/2307.00521",
+  },
+  {
+    title: "SeDe: Balancing Blockchain Privacy and Regulatory Compliance by Selective De-Anonymization",
+    href: "https://arxiv.org/abs/2311.08167"
+  }
+]
+---
+
+<PageLayout meta={{ title: "Home" }}>
+	<section>
+		<h1 class="title mb-4">Hi. I'm Naveen.</h1>
+		<p class="mb-2">
+      An autodidact engineer passionate about pioneering technology at the forefront. Currently focused on Zero Knowledge and other privacy-centric innovations.
+		</p>
+    <p class="mb-4">
+      Previously, I was an independent engineer working mostly with startups, leading & building their tech from scratch.
+    </p>
+		<SocialList />
+	</section>
+	<section aria-label="Blog post list" class="mt-16">
+		<h2 class="title mb-4 text-xl">Writings</h2>
+		<ul class="space-y-4 sm:space-y-2">
+			{
+				allPostsByDate.map((p) => (
+					<li class="flex flex-col gap-x-2 sm:flex-row">
+						<PostPreview post={p} />
+					</li>
+				))
+			}
+		</ul>
+	</section>
+	<section class="mt-16">
+		<h2 class="title mb-4 text-xl">Hacks</h2>
+		<ul class="space-y-4 sm:space-y-2">
+			{
+				projects.map(({ href, title, desc }) => (
+					<li>
+						<a
+							href={href}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="cactus-link inline-block"
+						>
+							{title}
+						</a>:
+						<p class="inline-block sm:mt-2">{desc}</p>
+					</li>
+				))
+			}
+		</ul>
+	</section>
+	<section class="mt-16">
+		<h2 class="title mb-4 text-xl">Publications</h2>
+		<ul class="space-y-4 sm:space-y-2">
+			{
+				publications.map(({ href, title }) => (
+					<li class="mb-4">
+						<a
+							href={href}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="cactus-link inline-block"
+						>
+							{title}
+						</a>
+					</li>
+				))
+			}
+		</ul>
+	</section>
+</PageLayout>
