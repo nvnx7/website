@@ -1,0 +1,990 @@
+---
+title: "Speedrun to Groth16 Zero Knowledge Proofs"
+publishedAt: "2024-01-12"
+summary: "A concise explanation of the mathematics behind Groth16 zero knowledge proofs."
+math: true
+---
+
+## Introduction
+
+Zero knowledge proofs are perhaps the one of the most noble cryptographic inventions made and popularized
+with the introduction of blockchains. It also is known for its notoriously complex mathematics behind it.
+
+This article intends to cover the mathematical machinery behind it in as concisely as possible without losing
+the context. All the arithmetic operations in this article is implicitly assumed to be done inside a finite field
+with some chosen prime number, $p$.
+
+_**Note**:This is not a from scratch explanation of why zero-knowledge proofs work. I assume the reader knows about
+finite fields, set theory, group theory and basic properties of elliptic curves._
+
+## Arithmetic Circuits
+
+An arithmetic circuit is simply a system of equations. Needless to say, system of equations with mathematical
+operations like addition and multiplication.
+
+An example of arithmetic circuit would be:
+
+$$
+\begin{align}
+20 &= 2x + 3y + z \tag{1} \\
+24 &= x * y * z \tag{2}
+\end{align}
+$$
+
+In arithmetic circuit the equality (symbol $=$) should be read as assertion rather than assignment. We say
+an arithmetic circuit to be satisfied when we have valid values for the input variables - $x$, $y$ and $z$ in this case.
+
+A valid assignment in our example would be: $x = 3$, $y = 2$ and $z = 4$.
+
+## R1CS (Rank-1 Constraint System)
+
+A rank-1 constraint system or r1cs is also a system of equations. But the difference is that each equation in the system
+can only have one multiplication. Although any number of additions are allowed.
+
+Taking up from previous example, the equation $(1)$ remains same since it only has additions(and
+multiplication by constants). But we have to break the second equation since it has more than one multiplication.
+A valid r1cs would be:
+
+$$
+\begin{align}
+20 &= 2x + 3y + z \\
+24 &= t * z \\
+t &= x * y \tag{3}
+\end{align}
+$$
+
+We simply broke $(2)$ to introduce another variable $t$ so as to comply with r1cs.
+
+We call **witness** a vector that has values that satisfies our r1cs. Lets define our witness as:
+
+$$
+w = [1, x, y, z, t] \tag{4}
+$$
+
+In r1cs, we generally re-arrange the variables to create it in this form:
+
+$$
+out = l * r \tag{5}
+$$
+
+So to take an example equation:
+
+$$
+out = 5x²y + 3x + 7 \tag{6}
+$$
+
+We break this into:
+
+$$
+\begin{align}
+u &= x * x \\
+v &= u * y \\
+out &= 5v + 3x + 7 \tag{7}
+\end{align}
+$$
+
+Our witness looks like:
+
+$$
+w = [1, out, x, y, u, v] \tag{8}
+$$
+
+Notice that instead of one simple equation of form $(5)$ we have multiple. All of these can be
+folded into matrices- $L$, $R$ and $O$.
+
+Let's work out the equations in $(7)$ to get the matrices $L$, $R$ and $O$.
+
+#### Equation 1
+
+$$
+u = x * x
+$$
+
+As obvious in this case we have $out = u$, $l = x$ and $ r= x$.
+
+To satisfy we have:
+
+$$
+\begin{align}
+L_1 &= [0, 0, 1, 0, 0, 0] \\
+R_1 &= [0, 0, 1, 0, 0, 0] \\
+O_1 &= [0, 0, 0, 0, 1, 0] \tag{10}
+\end{align}
+$$
+
+It satisfies:
+
+$$
+O_1 w = (L_1 w) \odot (R_1 w) \tag{11}
+$$
+
+Working out $(11)$ will yield the same as $u = x * x$.
+
+#### Equation 2
+
+The equation 2 is:
+
+$$
+v = u * y
+$$
+
+If worked out in similar way as first equation we will get:
+
+$$
+\begin{align}
+L_2 &= [0, 0, 0, 0, 1, 0] \\
+R_2 &= [0, 0, 0, 1, 0, 0] \\
+O_2 &= [0, 0, 0, 0, 0, 1] \tag{12}
+\end{align}
+$$
+
+The same can be verified.
+
+#### Equation 3
+
+This is a bit different:
+
+$$
+out = 5v + 3x + 7
+$$
+
+We can rewrite it as:
+
+$$
+out = (5v + 3x + 7) * 1 \tag{13}
+$$
+
+So now, $o$ is $out$, $l$ is $(5v + 3x + 7)$ and $r$ is 1.
+
+Now following the same rules considering our witness vector ($w = [1, out, x, y, u, v]$) we get:
+
+$$
+\begin{align}
+L_3 &= [7, 0, 3, 0, 0, 5] \\
+R_3 &= [1, 0, 0, 0, 0, 0] \\
+O_3 &= [0, 1, 0, 0, 0, 0] \tag{14}
+\end{align}
+$$
+
+This can also be verified by matrix multiplication.
+
+#### Final R1CS
+
+Now if we combine all of the representations i.e. combine $L_1$, $L_2$ and $L_3$ as rows of $L$,
+and similarly for $R$ and $O$, we get:
+
+$$
+\begin{align}
+L &= \begin{bmatrix} 0 & 0 & 1 & 0 & 0 & 0 \\ 0 & 0 & 0 & 0 & 1 & 0 \\ 7 & 0 & 3 & 0 & 0 & 5 \end{bmatrix} \\[6pt]
+R &= \begin{bmatrix} 0 & 0 & 1 & 0 & 0 & 0 \\ 0 & 0 & 0 & 1 & 0 & 0 \\ 1 & 0 & 0 & 0 & 0 & 0 \end{bmatrix} \\[6pt]
+O &= \begin{bmatrix} 0 & 0 & 0 & 0 & 1 & 0 \\ 0 & 0 & 0 & 0 & 0 & 1 \\ 0 & 1 & 0 & 0 & 0 & 0 \end{bmatrix} \tag{15}
+\end{align}
+$$
+
+These matrices along with the chosen witness $w$ in $(8)$ satisfy the equation:
+
+$$
+(Lw) \odot (Rw) = Ow \tag{16}
+$$
+
+where $\odot$ represents Hadamard product.
+
+#### Bare Proof
+
+##### <u> **Circuit Constraints**</u>
+
+R1CS matrices $L$, $R$ and $O$.
+
+##### <u> **Proof**</u>
+
+Witness vector $w$.
+
+##### <u> **Verification**</u>
+
+Check if $(Lw) \odot (Rw) = Ow$ holds.
+
+But this is far from being zero knowledge proof. Because the proof is witness $w$ itself and it is
+revealed to verifier. Also, it is not succinct because the proof grows as the witness vector grows.
+
+### Pairings
+
+Let us assume that $G_1$, $G_2$ and $G_T$ be the generator elements of the groups $\mathbb{G}_1$,
+$\mathbb{G}_2$ and $\mathbb{G}_T$ respectively, such that pairing elements from $\mathbb{G}_1$
+and $\mathbb{G}_2$ gives us an element in $\mathbb{G}_T$. That is:
+
+$$
+e(aG_1, bG_2) = e(abG_1, G_2) = e(G_1, abG_2) = abG_{T} \tag{17}
+$$
+
+We will use $\bullet$ operator to represent the pairing operation. For example:
+
+$$
+[X]_1 \bullet [Y]_2 = [Z]_T
+$$
+
+where $[X]_1 \in \mathbb{G}_1$, $[Y]_2 \in \mathbb{G}_2$ and $[Z]_T \in \mathbb{G}_T$. The prover
+is going to use property of pairing to improve the our proof.
+
+Get into more details about pairings [here](https://vitalik.eth.limo/general/2017/01/14/exploring_ecp.html).
+
+#### Encrypted Witness Proof
+
+This time the prover encrypts the witness vector to hide it. Consider the equation $(16)$, we want
+to hide our witness $w$. Here's how we approach it. We do an element-wise multiplication of our
+witness vector with both $G_1$ and $G_2$:
+
+$$
+\begin{gather}
+w * G_1 = [[w_1]_1, [w_2]_1, \dots, [w_n]_1] \\
+w * G_2 = [[w_1]_2, [w_2]_2, \dots, [w_n]_2] \tag{18}
+\end{gather}
+$$
+
+Now instead of plain witness vector $w$, prover sends $[w_i]_1$ and $[w_i]_2$ vectors as proof. The
+verifier cannot extract any witness value $w_i$ from these due to discrete logarithm problem.
+
+##### <u> **Circuit Constraints**</u>
+
+R1CS matrices $L$, $R$ and $O$.
+
+##### <u> **Proof**</u>
+
+Encrypted witness vectors $[w_i]_1$ and $[w_i]_2$.
+
+##### <u> **Verification**</u>
+
+Check if equation holds:
+
+$$
+(L (w * G_1)) \bullet (R (w * G_2)) = (O (w * G_1)) \bullet G_2 \tag{19}
+$$
+
+The proof is now zero knowledge since the witness is encrypted - nobody apart from prover sees it.
+But the proof is still not succinct since the proof grows as the witness vector grows.
+
+## QAP (Quadratic Arithmetic Program)
+
+QAPs are also arithmetic circuits but instead of matrices as we did before, we represent the
+constraints as a set of polynomials.
+
+As we saw before, to verify we check if the following assertion $(19)$ must hold.
+But this takes $O(n)$ time and is expensive, we want to verify it in constant $O(1)$ time.
+To achieve this, we convert the matrices into polynomials and apply some useful theorems.
+
+### Lagrange Interpolation
+
+The lagrange interpolation is the theorem that given $n$ points - $(x_1, y_1) \dots (x_n, y_n)$
+there exists a unique polynomial $\mathcal{L}(x)$ of degree $(n - 1)$ that passes through all of them.
+Read more [here](https://en.wikipedia.org/wiki/Lagrange_polynomial).
+
+Lagrange interpolation is the key to make proof succinct by converting the matrices $L$, $R$ and
+$O$ into polynomials. Let's take the $L$ matrix for example. The product $Lw$ gives us a vector of
+$n$ elements. The function $\mathcal{L}$ can convert this vector $Lw$ into a polynomial $l(x)$. Same
+goes for $Rw$ and $Ow$:
+
+$$
+\begin{align}
+\mathcal{L}(Lw) &= l(x) \\
+\mathcal{L}(Rw) &= r(x) \\
+\mathcal{L}(Ow) &= o(x)
+\end{align}
+$$
+
+Interpolation is a linear operation, so it is homomorphic. That is, for any two vectors $a$ and
+$b$, $\mathcal{L}(a + b) = \mathcal{L}(a) + \mathcal{L}(b)$.
+If we take each column of $L$ as vector and convert these into polynomials $l_1(x) \dots l_n(x)$,
+using $\mathcal{L}$ and then weigh them with the witness vector items $w_i$, we get the same
+polynomial $l(x)$ as in $(20)$. Similar argument goes for $R$ and $O$.
+
+Given this we can now write:
+
+$$
+\begin{align}
+\mathcal{L}(Lw) &= \sum_{i=1}^{n} l_i(x) \cdot w_i = l(x) \\
+\mathcal{L}(Rw) &= \sum_{i=1}^{n} r_i(x) \cdot w_i = r(x) \\
+\mathcal{L}(Ow) &= \sum_{i=1}^{n} o_i(x) \cdot w_i = o(x) \tag{20}
+\end{align}
+$$
+
+Now we have successfully converted the original r1cs at $(16)$ into polynomials. But we cannot just apply
+the same equality check to polynomials. That is,
+
+$$
+l(x)r(x) = o(x) \tag{21}
+$$
+
+will not hold, since degrees of the polynomials will not match, and nor will the equality.
+
+To balance the equation we can introduce another polynomial $b(x)$:
+
+$$
+l(x)r(x) = o(x) + b(x) \tag{22}
+$$
+
+such that for the correct chosen witness $b(x) = 0$ and hence equality holds.
+
+A naive approach would be to just let prover choose $b(x) = l(x)r(x) - o(x)$. But it has critical
+flaw. The prover can choose get any random witness $w$ and calculate $l(x)$, r(x) and $o(x)$. Then
+prover can choose any arbitrary polynomial $b(x)$ that balances the equation $(22)$.
+
+We restrict $b(x)$ to have roots $1, 2, 3, \dots n$, so that the term $b(x)$ vanishes to $0$ at
+any $x$ degree. To put this restriction $b(x)$ is composed as:
+
+$$
+b(x) = h(x)t(x) \tag{23}
+$$
+
+and fix the $t(x)$ to always be:
+
+$$
+t(x) = (x - 1)(x - 2) \dots (x - n) \tag{24}
+$$
+
+which forces $t(x)$ to have roots $1, 2, \dots n$ and so do for $b(x)$.
+
+Then $h(x)$ can simply be calculated as:
+
+$$
+h(x) = \frac{l(x) r(x) - o(x)}{t(x)} \tag{25}
+$$
+
+### Schwartz-Zippel Lemma
+
+Schwartz-Zippel lemma says that given two polynomials $p(x)$ and $q(x)$ with degrees $d_p$ and $d_q$
+where $p(x) \neq q(x)$, the maximum number of points they can intersect is $d = max(d_p, d_q)$. This holds
+true even for polynomials in finite field.
+
+This lemma can be exploited to check if two polynomials $f(x)$ and $g(x)$ are equal, succinctly. The
+naive way would be to check equality of all coefficients of polynomials - which would take linear time
+$O(d)$. But if polynomials are evaluated at some random variable $a$ and then comparing
+the evaluations $f(a)$ and $g(a)$ is constant time $O(1)$.
+
+The check only fails for $d$ number of points where evaluations will be equal even though
+the polynomials are not same. But for a finite field of a very large size $p$ such that $p >> d$, it
+is very highly unlikely that a random point would be one of such $d$ points.
+
+#### Succinct Proof
+
+Now the verifier can use above property of Schwartz-Zippel lemma by choosing a random element $\tau$
+and sends it to the prover to evaluate polynomials without revealing them. And prover calculates following:
+
+$$
+\begin{align}
+A &= l(\tau) \\
+B &= r(\tau) \\
+C &= o(\tau) + h(\tau)t(\tau) \tag{26}
+\end{align}
+$$
+
+##### <u> **Circuit Constraints**</u>
+
+The polynomials $l(x)$, $r(x)$, $o(x)$ and $h(x)t(x)$.
+
+##### <u> **Proof**</u>
+
+The elements $A$, $B$ and $C$.
+
+##### <u> **Verification**</u>
+
+Verifier checks:
+
+$$
+AB = C \tag{27}
+$$
+
+This convinces verifier that prover indeed has the knowledge of a valid witness because
+the chances of prover randomly receiving a $\tau$ where polynomials intersect is close to none.
+
+But this is still not secure since we have no way to verify that prover indeed performed the polynomial
+evaluations correctly.
+
+This is where trusted setup comes in.
+
+## Trusted Setup
+
+The trusted setup is basically a mechanism to evaluate a polynomial on a secret value such that it
+doesn't reveal information about the polynomial to the verifier and the prover does not get to know
+what value they are evaluating on.
+
+Let $f(x) = a_nx^n + a_{n-1}x^{n-1} + \dots + a_0$ be the polynomial in question. To initiate a
+party picks a secret scalar $\tau$ and calculates all the powers $x$ for $f(x)$:
+
+$$
+[\tau^{n}, \tau^{n-1}, \dots, \tau, 1] \tag{28}
+$$
+
+Then to commit to it by multiplying the same by a generator point $G$:
+
+$$
+[\Omega_{n}, \Omega_{n-1}, \dots, \Omega, G] = [\tau^{n}G, \tau^{n-1}G, \dots, {\tau}G, G] \tag{29}
+$$
+
+Theses powers of $x$ committed as elliptic curve points i.e. $[\Omega_{n}, \Omega_{n-1}, \dots, \Omega, G]$
+is called **structure reference string (SRS)**. Using SRS anyone can compute any polynomial $f(x)$ (of degree
+at most $n$) at $\tau$ without actually know the value of $\tau$.
+
+But right not there's a flaw. The person creating the SRS chose $\tau$ and is supposed to destroy it.
+It may not chose to do so and compromise or misuse it.
+
+To tackle the problem of trusting single party for generating the SRS we make this setup multiparty.
+We do this by forwarding the SRS successively through multiple parties who also choose a secret scalar,
+say, $\gamma$ and operate on previous SRS:
+
+$$
+[\gamma^{n}\Omega_{n}, \gamma^{n-1}\Omega_{n-1}, \dots, \gamma\Omega, {\gamma}G] = [({\gamma\tau})^{n}G, ({\gamma\tau})^{n-1}G, \dots, ({\gamma\tau})G, {\gamma}G] \tag{30}
+$$
+
+Now this process can go on and on through many number of parties. Even if one of the participating
+parties of this setup destroys their secret, it remains safe. The resulting artifact we get at the
+end of this ceremony is also called **powers of tau**.
+
+## QAP With Trusted Setup
+
+Note that while we had laid out the QAP in $(22)$, we didn't encrypt the witness. Now that prover has
+the trusted setup's SRS it can use it for encrypting the polynomials $l$, $r$, $o$ and $h(x)t(x)$.
+
+Suppose trusted setup was performed to generate the SRS corresponding to both $G_1$ and $G_2$ groups as:
+
+$$
+\begin{gather}
+[\Omega_{n}, \Omega_{n-1}, \dots, \Omega, G_1] \quad \text{where} \quad \Omega_{i} \in \mathbb{G}_1 \\
+[\Theta_{n}, \Theta_{n-1}, \dots, \Theta, G_2] \quad \text{where} \quad \Theta_{i} \in \mathbb{G}_2 \tag{31}
+\end{gather}
+$$
+
+We encrypt the polynomial $l(x)$ with $G_1$, $r(x)$ with $G_2$ and $o(x)$ with $G_1$. Writing $l_n, \dots, l_0$
+for the coefficients of $l(x)$ (highest degree first), and similarly for $r(x)$ and $o(x)$, we take the dot
+product of the coefficient list with the matching half of the SRS from $(31)$:
+
+$$
+\begin{align}
+[A]_{1} &= [l_n, \dots, l_0] \cdot [\Omega_n, \dots, \Omega, G_1] \\
+[B]_{2} &= [r_n, \dots, r_0] \cdot [\Theta_n, \dots, \Theta, G_2] \\
+[C]_{1} &= [o_n, \dots, o_0] \cdot [\Omega_n, \dots, \Omega, G_1] + \, ? \tag{32}
+\end{align}
+$$
+
+where $\cdot$ operator represents dot product of two vectors.
+
+But we can't really calculate the $[C]_{1}$ yet. Because we don't know the SRS for $h(x)t(x)$. The
+prover cannot use the SRS it used for $l(x)$ and $o(x)$. Why? Because the degrees of polynomial
+$h(x)t(x)$ differ from those. We need to figure out this SRS first. That means trusted setup needs
+to account for it.
+
+Luckily, remember from $(24)$ that $t(x)$ is a fixed known polynomial beforehand at the time of trusted
+setup, unlike $h(x)$. So for SRS for the polynomial $h(x)t(x)$, the ceremony can simply plug in the
+value $\tau$ to $t(x)$ to get constant $t(\tau)$.
+
+Now coming to $h(x)$, it has a degree of $(n-1)$, inferred from $(25)$. The ceremony can create trusted
+setup now as:
+
+$$
+[\Upsilon_{n-2}, \Upsilon_{n-3}, \dots, \Upsilon_{1}, \Upsilon_{0}] = [\tau^{n-2}t(\tau)G_1, \tau^{n-3}t(\tau)G_1, \dots, {\tau}t(\tau)G_1, t(\tau)G_1] \tag{33}
+$$
+
+The whole trusted setup now gives us the SRS:
+
+$$
+\begin{gather}
+[\Omega_{n}, \Omega_{n-1}, \dots, \Omega, G_1] \quad \text{where} \quad \Omega_{i} \in \mathbb{G}_1 \\
+[\Theta_{n}, \Theta_{n-1}, \dots, \Theta, G_2] \quad \text{where} \quad \Theta_{i} \in \mathbb{G}_2 \\
+[\Upsilon_{n-2}, \Upsilon_{n-3}, \dots, \Upsilon_{1}, \Upsilon_{0}] \quad \text{where} \quad \Upsilon_{i} \in \mathbb{G}_1 \tag{34}
+\end{gather}
+$$
+
+#### Proof With Trusted Setup
+
+And now we can complete our previous evaluation $(32)$ as:
+
+$$
+\begin{align}
+[A]_{1} &= [l_n, \dots, l_0] \cdot [\Omega_n, \dots, \Omega, G_1] \\
+[B]_{2} &= [r_n, \dots, r_0] \cdot [\Theta_n, \dots, \Theta, G_2] \\
+[C]_{1} &= [o_n, \dots, o_0] \cdot [\Omega_n, \dots, \Omega, G_1] + [h_{n-2}, \dots, h_0] \cdot [\Upsilon_{n-2}, \dots, \Upsilon_1, \Upsilon_0] \tag{35}
+\end{align}
+$$
+
+##### <u> **Circuit Constraints**</u>
+
+The polynomials $l(x)$, $r(x)$, $o(x)$ and $h(x)t(x)$.
+
+##### <u> **Proof**</u>
+
+The group elements $[A]_1$, $[B]_2$ and $[C]_1$.
+
+##### <u> **Trusted Setup SRS**</u>
+
+The elements:
+
+$$
+\begin{gather}
+([\Omega_{n}, \Omega_{n-1}, \dots, \Omega, G_1], \\
+[\Theta_{n}, \Theta_{n-1}, \dots, \Theta, G_2], \\
+[\Upsilon_{n-2}, \Upsilon_{n-3}, \dots, \Upsilon_{1}, \Upsilon_{0}])
+\end{gather}
+$$
+
+##### <u> **Verification**</u>
+
+The verifier checks:
+
+$$
+[A]_{1} \bullet [B]_{2} = [C]_{1} \bullet G_{2} \tag{36}
+$$
+
+The parameters $[A]_1$, $[B]_2$ and $[C]_1$ is our proof. It is zero knowledge and succinct.
+
+## Groth16 Algorithm
+
+The equation $(36)$ gives a legitimate algorithm to perform a valid zk proof verification. But
+right now, there is nothing stopping a prover from coming up random values to calculate $[A]_1$,
+$[B]_2$ and $[C]_1$ to hand over to verifier.
+
+#### $\alpha$ and $\beta$
+
+To solve for the problem above Groth16 introduces two additional parameters $\alpha$ and $\beta$.
+These parameters are output of the trusted setup:
+
+$$
+\begin{align}
+[\alpha]_1 &= {\alpha}G_1 \\
+[\beta]_2 &= {\beta}G_2 \tag{37}
+\end{align}
+$$
+
+If we somehow update the verification formula to:
+
+$$
+[A]_{1} \bullet [B]_{2} = [C]_{1} \bullet G_{2} + [\alpha]_1 \bullet [\beta]_2 \tag{38}
+$$
+
+Now the $G_T$ point $[\alpha]_1 \bullet [\beta]_2$ is unknown to everyone. The prover knows
+discrete logs of $[A]_1$ and $[B]_2$. If it tries to select any such two points, to make the
+proof valid it will have to calculate $[C]_1$ also. But it cannot do so since $[\alpha]_1 \bullet [\beta]_2$
+is unknown and so it its discrete log. Similar argument goes if prover starts from a random
+$[C]_1$.
+
+But we cannot just randomly introduce it in our original $(36)$ equation. Instead let's try to
+come up with it by introducing the $\alpha$ and $\beta$ to LHS of it.
+
+$$
+\begin{align}
+(\alpha + l(x))(\beta + r(x)) &= {\alpha}{\beta} + {\alpha}r(x) + {\beta}l(x) + l(x)r(x) \\
+&= {\alpha}{\beta} + {\alpha}r(x) + {\beta}l(x) + o(x) + h(x)t(x) \tag{39}
+\end{align}
+$$
+
+Note that we used $(22)$ and $(23)$ to replace $l(x)r(x)$ with $o(x) + h(x)t(x)$.
+
+The updated $A$, $B$ and $C$ becomes:
+
+$$
+\begin{align}
+A &= \alpha + l(x) \\
+B &= \beta + r(x) \\
+C &= {\alpha}r(x) + {\beta}l(x) + o(x) + h(x)t(x) \tag{40}
+\end{align}
+$$
+
+The trusted setup now has to also random sample $\alpha$ and $\beta$ to produce $[\alpha]_1$
+and $[\beta]_2$ as part of SRS.
+
+Given our trusted setup the encrypted points become:
+
+$$
+\begin{align}
+[A]_1 &= [\alpha]_1 + [l_n, \dots, l_0] \cdot [\Omega_n, \dots, \Omega, G_1] \\
+[B]_2 &= [\beta]_2 + [r_n, \dots, r_0] \cdot [\Theta_n, \dots, \Theta, G_2] \\
+[C]_1 &= \, ? \tag{41}
+\end{align}
+$$
+
+We've run into a problem now. To calculate $[C]_1$, we cannot simply do point multiplication
+of $C$ and $G_1$. Our trusted setup provides the $[\alpha]_1$ and $[\beta]_2$ points, not
+plain values - those are discarded.
+
+The problematic term for $C$ is ${\alpha}r(x) + {\beta}l(x) + o(x)$ part. And note that prover
+has to calculate $[C]_1$ without revealing the actual polynomials. Lets rewrite $C$ in summation
+form:
+
+$$
+\begin{align}
+C &= \alpha \sum_{i=1}^{n} w_i l_i(\tau) + \beta \sum_{i=1}^{n} w_i r_i(\tau) + \sum_{i=1}^{n} w_i o_i(\tau) \\
+&= \sum_{i=1}^{n} \left( \alpha w_i l_i(\tau) + \beta w_i r_i(\tau) + w_i o_i(\tau) \right) \\
+&= \sum_{i=1}^{n} w_i \left( \alpha l_i(\tau) + \beta r_i(\tau) + o_i(\tau) \right) \tag{42}
+\end{align}
+$$
+
+Prover cannot reveal $w_i$ to anyone. Trusted setup has to be independent of any witness value.
+
+Therefore for each $(\alpha l_i(\tau) + \beta r_i(\tau) + o_i(\tau))$ corresponding to each $w_i$,
+the trusted setup must generate points as:
+
+$$
+\begin{align}
+[\Psi_1]_1 &= (\alpha l_1(\tau) + \beta r_1(\tau) + o_1(\tau)) G_1 \\
+[\Psi_2]_1 &= (\alpha l_2(\tau) + \beta r_2(\tau) + o_2(\tau)) G_1 \\
+&\dots \\
+[\Psi_n]_1 &= (\alpha l_n(\tau) + \beta r_n(\tau) + o_n(\tau)) G_1 \tag{43}
+\end{align}
+$$
+
+Notice we cannot calculate just one $[\Psi]_1$ point. Because we have to separate witness
+vector item $w_i$ out and each $(\alpha l_i(\tau) + \beta r_i(\tau) + o_i(\tau))$ term is
+being multiplied by a different $w_i$ term.
+
+#### Groth16 Proof Without Public Inputs
+
+Given new trusted setup SRS, now we can complete $(41)$ as:
+
+$$
+\begin{align}
+[A]_1 &= [\alpha]_1 + [l_n, \dots, l_0] \cdot [\Omega_n, \dots, \Omega, G_1] \\
+[B]_2 &= [\beta]_2 + [r_n, \dots, r_0] \cdot [\Theta_n, \dots, \Theta, G_2] \\
+[C]_1 &= \sum_{i=1}^{n} w_i [\Psi_i]_1 + [h_{n-2}, \dots, h_0] \cdot [\Upsilon_{n-2}, \dots, \Upsilon_1, \Upsilon_0] \tag{44}
+\end{align}
+$$
+
+##### <u> **Circuit Constraints**</u>
+
+The polynomials $l(x)$, $r(x)$, $o(x)$ and $h(x)t(x)$.
+
+##### <u> **Trusted Setup SRS**</u>
+
+The elements:
+
+$$
+\begin{gather}
+([\alpha]_1, [\beta]_2, \\
+[\Omega_{n}, \dots, \Omega, G_1], \\
+[\Theta_{n}, \dots, \Theta, G_2], \\
+[\Upsilon_{n-2}, \dots, \Upsilon_{1}, \Upsilon_{0}], \\
+[\Psi_1]_1, [\Psi_2]_1, \dots, [\Psi_n]_1)
+\end{gather}
+$$
+
+##### <u> **Proof**</u>
+
+The group elements $[A]_1$, $[B]_2$ and $[C]_1$.
+
+##### <u> **Verification**</u>
+
+The verifier checks $(38)$:
+
+$$
+[A]_1 \bullet [B]_2 = [C]_1 \bullet G_2 + [\alpha]_1 \bullet [\beta]_2
+$$
+
+### Public Inputs
+
+Right now all of the values in witness $w$ vector remains private. But in practice, a
+verifier would want some of those values to be public so as to bind the prover to values of
+its requirements.
+
+A naive approach would be to just let some subset of values in $w$ be exposed to verifier. Suppose,
+prover let subset ($m$ size) of witness values $w_1, w_2, \dots, w_m$ to be public. Now instead of
+prover computing the commitments for this public part, verifier computes it:
+
+$$
+[X]_1 = \sum_{i=1}^{m} w_i [\Psi_i]_1 \tag{45}
+$$
+
+So now $[X]_1 \bullet G_2$ represents public and rest represent private parts. The verification equation
+becomes:
+
+$$
+[A]_1 \bullet [B]_2 = [X]_1 \bullet G_2 + [C]_1 \bullet G_2 + [\alpha]_1 \bullet [\beta]_2 \tag{46}
+$$
+
+But this would allow the prover to forge proofs with incorrect witness. In current form,
+the elements $[\Psi_1]_1, \dots [\Psi_m]_1$ are meant to be used with the public elements
+of witness $w_i$ and rest i.e. $[\Psi_{m+1}]_1, \dots [\Psi_n]_1$ for private. But
+nothing guarantees it.
+
+For example, prover can pick a $[\Psi_k]_1$ from one $[\Psi_1]_1, \dots [\Psi_m]_1$ and calculate:
+
+$$
+[X]_1 = w_1 [\Psi_1]_1 + \dots + 0 [\Psi_k]_1 + \dots + w_m [\Psi_m]_1 \tag{47}
+$$
+
+zeroing out the kth term.
+
+And keep equation $(46)$ still balanced but moving over kth into the private part as:
+
+$$
+[C]_1 = w_k [\Psi_k]_1 + \sum_{i=1}^{n} w_i [\Psi_i]_1 + [h_{n-2}, \dots, h_0] \cdot [\Upsilon_{n-2}, \dots, \Upsilon_1, \Upsilon_0] \tag{48}
+$$
+
+Out original assertion with modified $[X]_1$ and $[C]_1$ in $(46)$ still holds. But the witness is
+incorrect.
+
+#### Separating Public and Private Inputs: $\gamma$ and $\delta$
+
+To segregate the public and private inputs, Groth16 introduces two more parameters $\gamma$ and
+$\delta$ to the trusted setup. The trusted setup now generates the $[\Psi_i]_1$ point differently
+for public and private inputs.
+
+For public inputs:
+
+$$
+[\Psi_i]_1 = \frac{\alpha l_i(\tau) + \beta r_i(\tau) + o_i(\tau)}{\delta} G_1 \quad \text{where} \quad i \in [1, m] \tag{49}
+$$
+
+and for private inputs:
+
+$$
+[\Psi_i]_1 = \frac{\alpha l_i(\tau) + \beta r_i(\tau) + o_i(\tau)}{\gamma} G_1 \quad \text{where} \quad i \in [m+1, n] \tag{50}
+$$
+
+Also since the $h(x)t(x)$ part is also need to be private, the trusted setup also modifies the
+previous SRS for it from $(33)$ as:
+
+$$
+[\Upsilon_{n-2}, \Upsilon_{n-3}, \dots, \Upsilon_{1}, \Upsilon_{0}] = \left[\frac{\tau^{n-2}t(\tau)}{\delta}G_1, \frac{\tau^{n-3}t(\tau)}{\delta}G_1, \dots, \frac{{\tau}t(\tau)}{\delta}G_1, \frac{t(\tau)}{\delta}G_1 \right] \tag{51}
+$$
+
+#### Groth16 Proof With Public Inputs
+
+As shown, the trusted setup simply divides the public and private parts by $\delta$ and $\gamma$
+respectively. The verifier now has to calculate $[X]_1$ as:
+
+$$
+[X]_1 = \sum_{i=1}^{m} w_i [\Psi_i]_1 \tag{52}
+$$
+
+And the private part of $[C]_1$ is calculated as:
+
+$$
+[C]_1 = \sum_{i=m+1}^{n} w_i [\Psi_i]_1 + [h_{n-2}, \dots, h_0] \cdot [\Upsilon_{n-2}, \dots, \Upsilon_1, \Upsilon_0] \tag{53}
+$$
+
+##### <u> **Circuit Constraints**</u>
+
+The polynomials $l(x)$, $r(x)$, $o(x)$ and $h(x)t(x)$.
+
+##### <u> **Trusted Setup SRS**</u>
+
+The elements:
+
+$$
+\begin{gather}
+([\alpha]_1, [\beta]_2, \\
+[\gamma]_2, [\delta]_2, \\
+[\Omega_{n}, \dots, \Omega, G_1], \\
+[\Theta_{n}, \dots, \Theta, G_2], \\
+[\Upsilon_{n-2}, \dots, \Upsilon_{1}, \Upsilon_{0}], \\
+[\Psi_1]_1, [\Psi_2]_1, \dots, [\Psi_n]_1)
+\end{gather}
+$$
+
+##### <u> **Proof**</u>
+
+The group elements $[A]_1$, $[B]_2$, $[X]_1$ and $[C]_1$.
+
+##### <u> **Verification**</u>
+
+The verifier checks:
+
+$$
+[A]_1 \bullet [B]_2 = [X]_1 \bullet [\delta]_2 + [C]_1 \bullet [\gamma]_2 + [\alpha]_1 \bullet [\beta]_2 \tag{54}
+$$
+
+Note that we paired the terms with $[\delta]_2$ and $[\gamma]_2$, where the SRS was divided by
+$\delta$ and $\gamma$ respectively - causing the terms to effectively cancel out and balance the
+equation.
+
+#### Adding Randomness
+
+Everything works fine so far. But there's still one flaw. An adversary can observing the proofs can
+run a brute force attack to find the witness, especially if the witness vector is small size. The
+same witness always produces exact same proof, so adversary can just keep guessing the witness until
+the generated proof matches the observed proof. In short, the proving algorithm is deterministic -
+it has no randomness.
+
+To cope with this Groth16 introduces two random finite field elements $r$ and $s$ that prover pricks,
+every time it generates a proof.
+
+Groth16 modifies the $A$ and $B$ polynomials by adding $r$ and $s$ to them:
+
+$$
+\begin{align}
+A &= \alpha + l(x) + r \delta \\
+B &= \beta + r(x) + s \delta \tag{55}
+\end{align}
+$$
+
+(Note: the prover does not actually know the values of $\delta$ and $\gamma$ since they are part
+of the trusted setup. But it can still use them to calculate $[A]_1$ and $[B]_2$.)
+
+Since $A$ and $B$ are modified, $X$ and $C$ also has to be modified to keep the equation $(54)$ balanced.
+
+$$
+\begin{align}
+(\alpha + l(x) + r \delta)(\beta + r(x) + s \delta) &= \alpha\beta + \alpha r(x) + \alpha s \delta \\
+&\quad + \beta l(x) + l(x)r(x) + l(x)s \delta \\
+&\quad + \beta r \delta + r \delta \, r(x) + r s \delta^{2} \\[8pt]
+&= \left[ \alpha\beta + \alpha r(x) + \beta l(x) + l(x)r(x) \right] \\
+&\quad + \left[ \alpha s \delta + l(x)s \delta + \beta r \delta + r \delta \, r(x) + r s \delta^{2} \right] \\[8pt]
+&= \left[ \alpha\beta + \alpha r(x) + \beta l(x) + l(x)r(x) \right] \\
+&\quad + \left[ (\alpha s \delta + l(x)s \delta + r s \delta^{2}) + (\beta r \delta + r \delta \, r(x) + r s \delta^{2}) - r s \delta^{2} \right] \\[8pt]
+&= \left[ \alpha\beta + \alpha r(x) + \beta l(x) + l(x)r(x) \right] \\
+&\quad + \left[ s \delta (\alpha + l(x) + r \delta) + r \delta (\beta + r(x) + s \delta) - r s \delta^{2} \right] \tag{56}
+\end{align}
+$$
+
+Using $(55)$ we can rewrite the above as:
+
+$$
+\begin{align}
+(\alpha + l(x) + r \delta)(\beta + r(x) + s \delta)
+&= \left[ \alpha\beta + \alpha r(x) + \beta l(x) + l(x)r(x) \right] + \left[ s \delta A + r \delta B - r s \delta^{2} \right]
+\end{align}
+$$
+
+Note that we have previously established that $l(x)r(x) = o(x) + h(x)t(x)$ in $(22)$ and $(23)$. Using that:
+
+$$
+\begin{align}
+(\alpha + l(x) + r \delta)(\beta + r(x) + s \delta) &= \left[ \alpha\beta + \alpha r(x) + \beta l(x) + o(x) + h(x)t(x) \right] \\
+&\quad + \left[ s \delta A + r \delta B - r s \delta^{2} \right] \tag{57}
+\end{align}
+$$
+
+Now we know what $A$ and $B$ are supposed to be (the LHS parts). We need to determine the the public
+part $X$ and private part $C$ of the RHS. For that we need to convert RHS of $(57)$ in summation form,
+since the public and private subsets fo witness $w$ are processed differently:
+
+$$
+\begin{align}
+(\alpha + l(x) + r \delta)(\beta + r(x) + s \delta) &= \left[ \alpha\beta + \alpha \sum_{i=1}^{n} w_i r_i(\tau) + \beta \sum_{i=1}^{n} w_i l_i(\tau) + \sum_{i=1}^{n} w_i o_i(\tau) + h(x)t(x) \right] \\
+&\quad + \left[ s \delta A + r \delta B - r s \delta^{2} \right] \\[8pt]
+&= \left[ \alpha\beta + \sum_{i=1}^{n} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right) + h(x)t(x) \right] \\
+&\quad + \left[ s \delta A + r \delta B - r s \delta^{2} \right] \tag{58}
+\end{align}
+$$
+
+As said earlier, witness public and private subsets are $w_1, w_2, \dots, w_m$ and
+$w_{m+1}, w_{m+2}, \dots, w_n$ respectively. So we can split the summation into two parts:
+
+$$
+\begin{align}
+(\alpha + l(x) + r \delta)(\beta + r(x) + s \delta) &= \left[ \alpha\beta + \sum_{i=1}^{m} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right) \right] \\
+&\quad + \left[ \sum_{i=m+1}^{n} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right) + h(x)t(x) + s \delta A + r \delta B - r s \delta^{2} \right] \tag{59}
+\end{align}
+$$
+
+We have broken the RHS into two parts - the first part is the public part and the second part is
+the private part.
+
+But remember in implementation, the public and private parts need to be divided by $\delta$ and
+and $\gamma$ respectively. So we can rewrite the above as:
+
+$$
+\begin{align}
+(\alpha + l(x) + r \delta)(\beta + r(x) + s \delta) &= \alpha\beta + \gamma \left[ \frac{\sum_{i=1}^{m} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right)}{\gamma} \right] \\
+&\quad + \delta \left[ \frac{\sum_{i=m+1}^{n} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right) + h(x)t(x) + s \delta A + r \delta B - r s \delta^{2}}{\delta} \right] \\[8pt]
+&= \alpha\beta + \gamma \left[ \frac{\sum_{i=1}^{m} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right)}{\gamma} \right] \\
+&\quad + \delta \left[ \frac{\sum_{i=m+1}^{n} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right) + h(x)t(x)}{\delta} + s A + r B - r s \delta \right] \tag{60}
+\end{align}
+$$
+
+Observer $(60)$ now and determine our updated proof's elements in plain form:
+
+$$
+\begin{align}
+&\alpha \beta \\
+A &= \alpha + l(x) + r \delta \\
+B &= \beta + r(x) + s \delta \\
+X &= \gamma \left[ \frac{\sum_{i=1}^{m} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right)}{\gamma} \right] \\
+C &= \delta \left[ \frac{\sum_{i=m+1}^{n} w_i \left( \alpha r_i(\tau) + \beta l_i(\tau) + o_i(\tau) \right) + h(x)t(x)}{\delta} + s A + r B - r s \delta \right] \tag{61}
+\end{align}
+$$
+
+(Note: We have extra terms $\alpha$ and $\beta$ also now).
+
+But the $(61)$ is in plain form. We need to convert those into group elements $[A]_1$, $[B]_2$, $[X]_1$ and
+$[C]_1$ to achieve the zero knowledge property. Lets see how.
+
+First, trusted setup already provides $[\alpha]_1$ and $[\beta]_2$, so prover just needs to pair them as:
+
+$$
+[\alpha]_1 \bullet [\beta]_2 \tag{62}
+$$
+
+For $[A]_1$ the trusted setup provides $[\alpha]_1$ and $[\delta]_1$. It also provides SRS for $l(x)$
+polynomial term - $[\Omega_{n}, \dots, \Omega, G_1]$. So prover can calculate $[A]_1$ as:
+
+$$
+[A]_1 = [\alpha]_1 + [l_n, \dots, l_0] \cdot [\Omega_n, \dots, \Omega, G_1] + r [\delta]_1 \tag{63}
+$$
+
+The element $[B]_2$ can be calculated similarly as:
+
+$$
+[B]_2 = [\beta]_2 + [r_n, \dots, r_0] \cdot [\Theta_n, \dots, \Theta, G_2] + s [\delta]_2 \tag{64}
+$$
+
+For $[X]_1$ the trusted setup provides SRS for $m$ public witness part -
+$[\Psi_1]_1, [\Psi_2]_1, \dots, [\Psi_m]_1$ (see $(49)$). It also yields the $[\gamma]_1$ point. So prover calculates $(52)$:
+
+$$
+[X]_1 = \sum_{i=1}^{m} w_i [\Psi_i]_1
+$$
+
+For $[C]_1$ the trusted setup provides SRS for rest ($n-m$) private witness part -
+$[\Psi_{m+1}]_1, [\Psi_{m+2}]_1, \dots, [\Psi_n]_1$ (see $(50)$). But before calculating $[C]_1$ which must
+be a group element of $\mathbb{G}_1$ (generator $G_1$) prover also needs to perform the point multiplication
+of $G_1$ with the term $(s A + r B - r s \delta)$ which is also part of $C$.
+
+Note that $r$ and $s$ are just random scalars chosen by the prover. $[\delta]_1$ and $[\beta]_1$ are
+already provided by trusted setup. $[A]_1$ is already calculated. But $[B]_1$ is a new term prover
+needs to calculate (previously we calculated $[B]_2$) as:
+
+$$
+[B]_1 = [\beta]_1 + [r_n, \dots, r_0] \cdot [\Omega_n, \dots, \Omega, G_1] + s [\delta]_1 \tag{65}
+$$
+
+Now prover can calculate $[C]_1$ as:
+
+$$
+[C]_1 = \sum_{i=m+1}^{n} w_i [\Psi_i]_1 + [h_{n-2}, \dots, h_0] \cdot [\Upsilon_{n-2}, \dots, \Upsilon_1, \Upsilon_0] + s [A]_1 + r [B]_1 - r s [\delta]_1 \tag{66}
+$$
+
+#### Final Groth16 Proof
+
+Now let us recall what each party has so far for the final proof generation:
+
+##### <u>**Circuit Constraints**</u>
+
+The polynomials $l(x)$, $r(x)$, $o(x)$ and $h(x)t(x)$.
+
+##### <u>**Trusted Setup SRS**</u>
+
+The elements:
+
+$$
+\begin{gather}
+([\alpha]_1, [\beta]_1, [\beta]_2, \\
+[\gamma]_2, [\delta]_1, [\delta]_2, \\
+[\Omega_{n}, \dots, \Omega, G_1], \\
+[\Theta_{n}, \dots, \Theta, G_2], \\
+[\Upsilon_{n-2}, \dots, \Upsilon_{1}, \Upsilon_{0}], \\
+[\Psi_1]_1, [\Psi_2]_1, \dots, [\Psi_n]_1)
+\end{gather}
+$$
+
+##### <u>**Proof**</u>
+
+The group elements $[A]_1$, $[B]_2$, $[X]_1$ and $[C]_1$.
+
+##### <u>**Verification**</u>
+
+The verifier checks:
+
+$$
+[A]_1 \bullet [B]_2 = [\alpha]_1 \bullet [\beta]_2 + [X]_1 \bullet [\delta]_2 + [C]_1 \bullet [\gamma]_2 \tag{67}
+$$
+
+This is the Groth16 proof system. It is succinct, zero knowledge and non-interactive. The proof size is
+constant, independent of the size of the circuit. The verification time is also constant, making it
+efficient for practical applications.
