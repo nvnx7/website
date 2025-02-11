@@ -1,0 +1,432 @@
+---
+title: 'Ethereum Yellow Paper Mathematics Deciphered | Part 3: Block'
+publishedAt: "2022-10-08"
+summary: "This post is part of series of articles that try to decipher mathematics in ethereum yellow paper, so that it makes sense to the reader and convey their meaning"
+math: true
+---
+
+This part of the series dives into section 4.3 of the [Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf), that elaborates the structure of blocks.
+
+If you haven't yet, go through Part 0 of this series to get conventions right.
+
+## Block
+A block, $B$ in Ethereum comprises three pieces of relevant information:
+- Block Header, $H$
+- List of transactions, $\mathbf{T}$ included in the block
+- A deprecated property, $\mathbf{U}$ which prior to _Paris_ fork, represented headers of blocks whose parents were present block's parent's parent (a.k.a _ommers_)
+- A collection of validator withdrawals $\mathbf{W}$ pushed by consensus layer
+
+Hence, a block $B$ can be represented as:
+$$
+B \equiv (B_H, B_{\mathbf{T}}, B_{\mathbf{U}}, B_{\mathbf{W}}) \tag{23}
+$$
+
+The header $H$ contains several pieces of information:
+- $\mathbf{parentHash}$ ($H_{\mathrm{p}}$): Hash of parent block's header.
+- $\mathbf{ommersHash}$ ($H_{\mathrm{o}}$): Hash that is now set to constant, $\mathtt{KEC}(\mathtt{RLP}())$ since deprecation.
+- $\mathbf{beneficiary}$ ($H_{\mathrm{c}}$): Beneficiary address priority fee from all transactions in this block.
+- $\mathbf{stateRoot}$ ($H_{\mathrm{r}}$): Hash of root of state trie after all transaction in block are finalized.
+- $\mathbf{transactionRoot}$ ($H_{\mathrm{t}}$): Hash of root of trie containing all transactions in this block.
+- $\mathbf{receiptsRoot}$ ($H_{\mathrm{e}}$): Hash of root of trie containing all receipts corresponding to each transaction in this block.
+- $\mathbf{logsBloom}$ ($H_{\mathrm{b}}$): Bloom filter created from indexable information in logs of transaction receipts of transactions in this block. (See [bloom filter](#bloom-filter) section).
+- $\mathbf{difficulty}$ ($H_{\mathrm{d}}$): A scalar value representing difficulty of this block.
+- $\mathbf{number}$ ($H_{\mathrm{i}}$): Number of all ancestor blocks of this block.
+- $\mathbf{gasLimit}$ ($H_{\mathrm{l}}$): Current limit of gas expenditure per block.
+- $\mathbf{gasUsed}$ ($H_{\mathrm{g}}$): The total gas used by all transactions in this block.
+- $\mathbf{timestamp}$ ($H_{\mathrm{s}}$): Unix time when this block was created.
+- $\mathbf{extraData}$ ($H_{\mathrm{x}}$): An arbitrary byte array containing data relevant to this block. This must be 32 bytes or fewer.
+- $\mathbf{prevRandao}$ ($H_\mathrm{a}$): The latest RANDAO mix (a pseudorandom value) after finalization of previous block. RANDAO is a mechanism for generating randomness for the network. See [here](https://eth2book.info/bellatrix/part2/building_blocks/randomness/) for detail.
+- $\mathbf{nonce}$ ($H_{\mathrm{n}}$): A 64-bit value which now deprecated and set to constant 0 due to replacement of proof-of-work to proof-of-stake.
+- $\mathbf{baseFeePerGas}$ ($H_\mathrm{f}$): Amount of wei burned per unit of gas consumed in this block.
+- $\mathbf{withdrawalsRoot}$ ($H_\mathrm{w}$): Hash of root of trie populated with withdrawals by validators.
+
+### Transaction Receipts
+The transaction receipts correspond to each transaction in a block and contains information related to execution of the transaction. Given a block $B$ having a list of receipts $\mathbf{R}$, the $i$th receipt is indexed/denoted by $B_\mathbf{R}[i]$.
+A single receipt $R$ is tuple of five items:
+- $R_\mathrm{x}$ - Type of transaction.
+- $R_\mathrm{z}$ - Status code of transaction.
+- $R_\mathrm{u}$ - Cumulative gas used in the block immediately after this transaction happened.
+- $R_\mathbf{l}$ - Set of logs created (aka events emitted) through execution of this transaction.
+- $R_\mathrm{b}$ - The bloom-filter composed of the logs.
+
+Hence it can be denoted as:
+$$
+R \equiv (R_\mathrm{x}, R_\mathrm{z}, R_\mathrm{u}, R_\mathrm{b}, R_\mathbf{l}) \tag{24}
+$$
+
+And, like other entities, corresponding collapse function for a receipt, $R$ is defined as:
+$$
+L_R(R) \equiv (R_\mathrm{z}, R_\mathrm{u}, R_\mathrm{b}, R_\mathbf{l}) \tag{25}
+$$
+
+The values are restricted/belong to their respective sets:
+$$
+R_{\mathrm{z}} \in \mathbb{N} \land R_{\mathrm{u}} \in \mathbb{N} \land R_{\mathrm{b}} \in \mathbb{B}_{256} \tag{26}
+$$
+
+Notice that $R_{\mathbf{l}}$ is list/series of log entries - $(O_0, O_1, O_2, ...)$ where each log entry $O$ is tuple comprising:
+- $O_\mathrm{a}$ - Logger's address (contract that emitted event log)
+- $O_{\mathbf{t}}$ - Series of log 32-byte topics, $(O_{\mathbf{t}0}, O_{\mathbf{t}1}, ... )$. You might know these as indexed parameters in an event. This could possibly be empty.
+- $O_{\mathbf{d}}$ - Some number of bytes of data. The un-indexed parameters of an event go into these.
+
+This is saying same as:
+$$
+O \equiv (O_\mathrm{a}, (O_{\mathbf{t}0}, O_{\mathbf{t}1}, ... ), O_{\mathbf{d}}) \tag{28}
+$$
+
+where $O_\mathrm{a}$ is 20-bytes address. Each entry in $O_\mathbf{t}$ list is 32-byte indexed event item. And $O_{\mathbf{d}}$ is arbitrary length byte data representing non-indexed events' data. In mathematical words it is same as conveying:
+$$
+O_\mathrm{a} \in \mathbb{B}_{20} \ \land \forall x \in O_\mathbf{t}:x \in \mathbb{B}_{32} \ \land O_{\mathbf{d}} \in \mathbb{B} \tag{29}
+$$
+
+## Bloom Filter
+The $\mathbf{logsBloom}$ bloom filter is derived from a Bloom filter function, $M$. A bloom filter is a probabilistic data structure that allows to ascertain whether an element in a set efficiently & rapidly.
+
+I highly recommend you to read up more about Bloom filters [here](https://llimllib.github.io/bloomfilter-tutorial/) before proceeding this section.
+
+$M$ operates on logger's address $O_\mathrm{a}$ and all each of the indexed log entries, $O_{\mathbf{t}} = (O_{\mathbf{t}0}, O_{\mathbf{t}1}, ...)$ and produces a bloom filter which is 256 byte (2048 bits) hash.
+
+_**Note:** Only event logs marked "indexed" (in Solidity) are included in bloom filter. This is why you can only filter events data by these "indexed" event parameters._
+
+The paper formally defines the Bloom filter function, $M$ as,
+
+$$
+M(O) \equiv {\bigvee}_{x \in \{O_{\mathrm{a}}\} \cup O_{\mathbf{t}}} \big( M_{3:2048}(x) \big) \tag{30}
+$$
+
+Let's decode it.
+
+$M_{3:2048}$ is a specialized bloom filter that takes an arbitrary byte sequence $\mathbf{x}$ and outputs a 2048 bits (256-bytes) filter. This has 3 bits set out of 2048 bits.
+
+The $\bigvee$ symbol above represents the bitwise $\mathtt{OR}$ operation over a series of byte sequences i.e. multiple 2048-bits sequences. In this context, the equivalence $(30)$ can be written as:
+$$
+M(O) \equiv M_{3:2048}(O_{\mathrm{a}})  | M_{3:2048}(O_{\mathbf{t}0}) | M_{3:2048}(O_{\mathbf{t}1}) | ...
+$$
+
+where $|$ is the bitwise $\mathtt{OR}$ operation.
+
+Now onto the working of $M_{3:2048}$ function.
+
+$M_{3:2048}$ takes an arbitrary length byte sequence, $\mathbf{x}$, and outputs a 2048-bits or 256-bytes length sequence $\mathbf{y}$, i.e.
+
+$$
+M_{3:2048}(\mathbf{x}: \mathbf{x} \in \mathbb{B}) \equiv \mathbf{y}: \mathbf{y} \in \mathbb{B}_{256} \tag{31}
+$$
+
+This 2048 bits length output $\mathbf{y}$ has all bits set to 0, except 3 bits.
+
+$$
+\mathbf{y} = (0, 0, 0, ..., 0) \quad (\text{except 3 bits}) \tag{32}
+$$
+
+Which of the 3 bits to set is defined by $M_{3:2048}$ function's algorithm:
+- First it keccak-256 hashes the byte sequence $\mathbf{x}$ i.e. $\mathtt{KECC}(\mathbf{x})$.
+- Then takes the first three pairs of bytes (byte pairs at indices $(0, 1), (2, 3), (4, 5)$) from the hash, $\mathtt{KECC}(\mathbf{x})$.
+- And then from each pair of bytes at indices $(i, i+1)$ ($\forall i \in {0, 2, 3}$), it takes the low-order 11 bits out of 16 bits (each byte pair is 16 bits).
+- Each of these 11-bit value (corresponding to each of 3 byte pairs) is subtracted from 2047 (highest 11-bit value in decimal) to output a set of 3 indices ranging from 0 to 2047.
+- These are the obtained indices at which bit is set to 1 in $\mathbf{y}$ byte sequence from $(30)$.
+
+Mathematically, the paper defines a helper function $m$ which extracts the required 11-bits:
+$$
+m(\mathbf{x}, i) \equiv \mathtt{KEC}(\mathbf{x})[i, i+1] \bmod 2048 \tag{34}
+$$
+
+As described earlier, it extracts 11 bits from two bytes ($i$ & $i+1$) of hash of $\mathbf{x}$. The sequence formed by bytes at $i$ and $i+1$ are 16-bits and by taking its $\bmod$ with 2048 reduces it to 11 bits. This is because 2048 is base for 11 bit i.e. $2048 = 2^{11}$ (11 bits). Hence applying $\bmod 2048$ on any value yields output between 0 and 2048 i.e. max 11 bits.
+
+Paper also defined a rather simple $\mathcal{B}_j$, bit-reference function which simply references bit at index $j$ in a given byte sequence.
+
+$\mathcal{B}$ is utilized to set bits at calculated indices to 1 in $\mathbf{y}$ as:
+$$
+\forall i \in \{0, 2, 4\} \quad \colon \quad \mathcal{B}_{2047 - m(\mathbf{x, i})}(\mathbf{y}) = 1 \tag{33}
+$$
+
+And this is how bloom-filters are calculated for logs.
+
+### Block Validity
+A block's validity is satisfied if and only if certain conditions are met:
+
+- Block's ommers field $B_\mathbf{U}$ must be empty (post _Paris_ fork).
+
+$$
+B_\mathbf{U} \equiv ()
+$$
+
+- The new root of state trie, must be equal to root of the trie derived from new state after transactions of this block, $B$ are finalized at state, $\boldsymbol{\sigma}$.
+$$
+H_{\mathrm{r}} \equiv \mathtt{TRIE}(L_S(\Pi(\boldsymbol{\sigma}, B)))
+$$
+where $L_S$ is state collapse function.
+
+_Recall from $(2)$ that if $\boldsymbol{\sigma}$ is current world state then $\Pi(\boldsymbol{\sigma}, B)$ defined the next state._
+
+- The $\mathbf{withdrawalsRoot}$ must be the root of the trie which is derived from pairwise RLP-encoding withdrawals:
+$$
+H_\mathrm{w} \equiv \mathtt{TRIE}( \{ \forall i \lt \lVert B_{\mathbf{B}} \rVert, i \in \mathbb{N} : p_{\mathrm{W}}(i, B_{\mathbf{W}}[i]) \} )
+$$
+
+where
+$$
+p_W(k, W) \equiv (\mathtt{RLP}(k), \mathtt{RLP}(L_W(W))) \tag{36}
+$$
+
+- The block header $\mathbf{transactionRoot}$, $H_{\mathrm{t}}$  must be equal to root of trie which is derived from RLP-encoding of all transactions, $B_\mathbf{T}$ in the block. The transaction, at index $i$, $B_{\mathbf{T}[i]}$ (= $T$) is RLP-encoded based on transaction its type, $T_\mathrm{x}$.
+$$
+H_{\mathrm{t}} \equiv \mathtt{TRIE}( \{ \forall i \lt \lVert B_{\mathbf{T}} \rVert, i \in \mathbb{N} : p_{\mathrm{T}}(i, B_{\mathbf{T}[i]}) \})
+$$
+
+where function $p_{\mathrm{T}}$ RLP-encodes a transaction, $T$ depending on type:
+$$
+p_{\mathrm{T}}(k, T) \equiv \left( \mathtt{RLP}(k), \begin{cases}
+\mathtt{RLP}({L_{\mathrm{T}}}(T)) & \text{if} \quad T_{\mathrm{x}} = 0 \\
+(T_{\mathrm{x}}) \cdot \mathtt{RLP}(L_{\mathrm{T}}(T)) & \text{otherwise}
+\end{cases}
+\right) \tag{37}
+$$
+
+Note that index $i$ ($k$ in above) of transaction in block is also encoded.
+
+- Likewise the $\mathbf{receiptRoot}$, $H_{\mathrm{e}}$ is derived from RLP-encoding of receipts which depends of receipt transaction type, $R_{\mathrm{x}}$:
+$$
+H_{\mathrm{e}} \equiv \mathtt{TRIE}( \{ \forall i \lt \lVert B_{\mathbf{R}} \rVert, i \in \mathbb{N} : p_{\mathrm{R}}(i, B_{\mathbf{T}[i]}) \})
+$$
+
+where function $p_{\mathrm{R}}$ RLP-encodes a transaction, $R$ depending on type:
+$$
+p_{\mathrm{R}}(k, R) \equiv \left( \mathtt{RLP}(k), \begin{cases}
+\mathtt{RLP}({L_{\mathrm{R}}}(R)) & \text{if} \quad R_{\mathrm{x}} = 0 \\
+(R_{\mathrm{x}}) \cdot \mathtt{RLP}(L_{\mathrm{R}}(R)) & \text{otherwise}
+\end{cases}
+\right) \tag{38}
+$$
+
+- $\mathbf{logsBloom}$ must bitwise $\mathtt{OR}$ of all bloom filters, $\mathbf{r}_{\mathrm{b}}$ derived from each receipt.
+$$
+H_{\mathrm{b}} \equiv \bigvee_{\mathbf{r} \in B_{\mathbf{R}}}(\mathbf{r}_{\mathrm{b}})
+$$
+
+Combining all of the above, a block's validity is constrained by:
+$$
+\displaylines{
+B_{\mathbf{U}} \equiv () \ \land \\
+H_{\mathrm{r}} \equiv \mathtt{TRIE}(L_S(\Pi(\boldsymbol{\sigma}, B))) \land \\
+H_{\mathrm{t}} \equiv \mathtt{TRIE}( \{ \forall i \lt \lVert B_{\mathbf{T}} \rVert, i \in \mathbb{N} : p_{\mathrm{T}}(i, B_{\mathbf{T}}[i]) \}) \land \\
+H_{\mathrm{e}} \equiv \mathtt{TRIE}( \{ \forall i \lt \lVert B_{\mathbf{R}} \rVert, i \in \mathbb{N} : p_{\mathrm{R}}(i, B_{\mathbf{T}}[i]) \}) \land \\
+H_{\mathrm{w}} \equiv \mathtt{TRIE}( \{ \forall i \lt \lVert B_{\mathbf{W}} \rVert, i \in \mathbb{N} : p_{\mathrm{W}}(i, B_{\mathbf{W}}[i]) \}) \land \\
+H_{\mathrm{b}} \equiv \bigvee_{\mathbf{r} \in B_{\mathbf{R}}}(\mathbf{r}_{\mathrm{b}}) \tag{35}
+}
+$$
+
+Futhermore, paper defines the equation,
+$$
+\mathtt{TRIE}(L_\mathrm{S}(\boldsymbol{\sigma})) = P(B_H)_{H_{\mathrm{r}}} \tag{39}
+$$
+
+If $B$ is current block then its parent block is $P(B_H)$. Then, this parent's header's state trie root component is denoted as $P(B_H)_{H_{\mathrm{r}}}$. The equation above says that $P(B_H)_{H_{\mathrm{r}}}$ is equal to the state trie root at world state $\boldsymbol{\sigma}$ which is when the block, $P(B_H)$ was finalized.
+
+### Serialization
+The paper lays out functions $L_\mathrm{H}$ and $L_\mathrm{B}$ for serialization of block header and block respectively:
+
+$$
+\displaylines{
+L_\mathrm{H}(H) \equiv (H_{\mathrm{p}}, H_{\mathrm{o}}, H_{\mathrm{c}}, H_{\mathrm{r}}, H_{\mathrm{t}}, H_{\mathrm{e}}, H_{\mathrm{b}}, H_{\mathrm{d}}, \\ 
+H_{\mathrm{i}}, H_{\mathrm{l}}, H_{\mathrm{g}}, H_{\mathrm{s}}, H_{\mathrm{x}}, H_{\mathrm{a}}, H_{\mathrm{n}}, H_{\mathrm{f}}, H_{\mathrm{w}}) \tag{40}
+}
+$$
+
+$$
+L_\mathrm{B}(B) \equiv (L_{\mathrm{H}}(B_{\mathrm{H}}), \widetilde{L}_{\mathrm{T}}^*(B_{\mathbf{T}}), L_{\mathrm{H}}^*(B_{\mathbf{U}})) \tag{41}
+$$
+
+where $\widetilde{L}_{\mathrm{T}}$ takes a special care of EIP-2718 transactions:
+
+$$
+\widetilde{L}_{\mathrm{T}}(T) = \begin{cases}
+L_{\mathrm{T}}(T) & \text{if} \quad T_{\mathrm{x}} = 0 \\
+(T_{\mathrm{x}}) \cdot \mathtt{RLP}(L_{\mathrm{T}}(T)) & \text{otherwise}
+\end{cases} \tag{42}
+$$
+
+with $\widetilde{L}_{\mathrm{T}}^*$, $L_{\mathrm{H}}^*$ and $L_{\mathrm{W}}^*$ are corresponding element-wise serialization functions for transactions, ommers and withdrawals in the block respectively.
+
+The header component values belong to respective sets:
+$$
+\displaylines{
+H_{\mathrm{p}} \in \mathbb{B}_{32}  \land  H_{\mathrm{o}} \in \mathbb{B}_{32}  \land H_{\mathrm{c}} \in \mathbb{B}_{20} \land \\
+H_{\mathrm{r}} \in \mathbb{B}_{32} \land H_{\mathrm{t}} \in \mathbb{B}_{32} \land H_{\mathrm{e}} \in \mathbb{B}_{32} \land \\
+H_{\mathrm{b}} \in \mathbb{B}_{256} \land H_{\mathrm{d}} \in \mathbb{N} \land H_{\mathrm{i}} \in \mathbb{N} \land \\
+H_{\mathrm{l}} \in \mathbb{N} \land H_{\mathrm{g}} \in \mathbb{N} \land H_{\mathrm{s}} \in \mathbb{N}_{256} \land \\
+H_{\mathrm{x}} \in \mathbb{B} \land H_{\mathrm{a}} \in \mathbb{B}_{32} \land H_{\mathrm{n}} \in \mathbb{B}_{8} \land \\
+H_{\mathrm{f}} \in \mathbb{N} \land H_{\mathrm{w}} \in \mathbb{B}_{32}
+} \tag{44}
+$$
+
+where, as already defined in convention, $B_{\mathrm{n}}$ is a bytes sequence and exactly equal to $\mathrm{n}$ bytes in size. Saying same as:
+$$
+\mathbb{B}_{\mathrm{n}} = \{ B: B \in \mathbb{B} \land \lVert B \rVert = n \} \tag{45}
+$$
+
+### Block Header Validity
+The parent block of block, $B$ is denoted as $P(B_{\mathrm{H}})$ ($\equiv P(H)$) which is formally defined as:
+$$
+P(H) \equiv B': \mathtt{KEC}(\mathtt{RLP}(B'_{\mathrm{H}})) = {H_{\mathrm{p}}} \tag{46}
+$$
+
+i.e. the parent of $B$ is $B'$ such that $\mathbf{parentHash}$, $H_\mathrm{p}$ of of $B$'s header is equal to keccak hash of (RLP encoded) header of $B'$. That is basically definition of $H_\mathrm{p}$ holding true.
+
+The block number, $H_\mathrm{i}$ is simply parent's block number, $P(H)_{H_\mathrm{i}}$ incremented by 1:
+$$
+H_{\mathrm{i}} \equiv {{P(H)_{\mathrm{H}}}_{\mathrm{i}}} + 1 \tag{47}
+$$
+
+The _base fee per gas_ $H_{\mathrm{f}}$ field of block header was introduced in _London_ release. $H_{\mathrm{f}}$ is the amount of wei burned per unit of gas consumed in the block.
+
+The expected value of base fee per gas is defined by function $F(H)$:
+$$
+F(H) \equiv \begin{dcases}
+1000000000 \ \ \ \text{if} \ H_{\mathrm{i}} = F_{\text{London}} \\
+P(H)_{H_\mathrm{f}} \ \ \ \ \ \ \ \text{if} \ P(H)_{H_\mathrm{g}} = \tau \\
+P(H)_{H_\mathrm{f}} - \nu \ \ \text{if} \ P(H)_{H_\mathrm{g}} \lt \tau \\
+P(H)_{H_\mathrm{f}} + \nu \ \ \text{if} \ P(H)_{H_\mathrm{g}} \gt \tau \tag{48}
+\end{dcases}
+$$
+
+Remember $F_{\text{London}}$ is the block number at _London_ fork.
+
+$\tau$ is _gas target_, a value obtained by dividing gas limit $H_{\mathrm{l}}$ by a global constant $\rho$ a.k.a the _**elastic multiplier**_. $\rho$ is set to 2.
+$$
+\rho \equiv 2 \tag{50}
+$$
+
+$\nu$ is the value by which the fee is adjusted.
+
+You may know that gas fees of the Ethereum network adjusts in response to the conjestion of transactions - more transactions being broadcasted means more fees. More transactions also mean more gas being consumed in a block i.e. $H_{\mathrm{g}}$ goes up. Therefore, increase in $H_{\mathrm{g}}$ leads  to increase in fee $H_{\mathrm{f}}$. 
+Similarly, decrease in $H_{\mathrm{g}}$ makes $H_{\mathrm{f}}$ also go down. The equivalence $(48)$ above defines exactly this mechanism. How? Let's see.
+
+$\tau$ is defined as:
+$$
+\tau \equiv \lfloor \frac{P(H)_{H_{\mathrm{l}}}}{\rho} \rfloor \tag{49}
+$$
+
+This basically conveys that the adjustments to the fee $H_{\mathrm{f}}$ should occur (increase/decrease) depending on whether gas consumed in previous (parent) block hit above or below the half ($\rho$=2) of its gas limit. Needless to say, this "half of previous block's gas limit" is just target $\tau$.
+
+The first case, $H_{\mathrm{i}} = F_{\text{London}}$ of $(48)$ simply resets the base fee per gas $H_{\mathrm{f}}$ to $1000000000$ at the block of _London_ fork. So that future adjustments vary around this value.
+
+The second case, $P(H)_{H_\mathrm{g}} = \tau$ of $(48)$ sets current block's base gas fee same as that of parent block, since target hit perfectly.
+
+The next two cases ($P(H)_{H_\mathrm{g}} \lt \tau$ and $P(H)_{H_\mathrm{g}} \gt \tau$) of $(48)$ defines the most cases where adjustment mechanism kicks in. For clarity, we only focus on the case where target $\tau$ was not even reached i.e when $P(H)_{H_\mathrm{g}} \lt \tau$ for now.
+
+When gas consumed in parent block $P(H)_{H_\mathrm{g}}$ was less than the target $\tau$, the fee $H_{\mathrm{f}}$ must go down by some magnitude to incentivize the market to perform more transactions. The magnitude of the decrease by which fee must decrease from parent block's fee is denoted by $\nu$.
+This can also be seen in the third case of $(48)$ where $\nu$ is subtracted from previous block's fee.
+
+$\nu$ is calculated based of the difference in the gas target and gas consumed in parent block i.e. $(\tau - P(H)_{H_\mathrm{g}})$.
+
+Precisely according to paper $\nu$ is proportional to a value $\nu^*$ as:
+$$
+\displaylines{
+\nu \propto \nu^* \\
+\text{or,} \ \nu \propto \lfloor \frac{ P(H)_{H_\mathrm{f}} \times (\tau - P(H)_{H_\mathrm{g}}) }{\tau} \rfloor \ \ (\text{if} \ \ P(H)_{H_\mathrm{g}} \lt \tau)
+}
+$$
+
+Since Ethereum is not a dead chain, in almost all cases $P(H)_{H_\mathrm{g}}$ will be greater than zero as long as at least one transaction is processed in the block. In that case, it implies that $(\tau - P(H)_{H_\mathrm{g}}) < \tau$.
+It also implies that $\frac{(\tau - P(H)_{H_\mathrm{g}})}{\tau} \lt 1$ the in above equation. That means $\nu^*$ will be less than gas fee of parent block since $P(H)_{H_\mathrm{f}}$ multiplied a value less than 1 will only decrease it.
+
+But technically, $P(H)_{H_\mathrm{g}}$ can assume 0 value if there were no transactions in parent block (hence no gas consumed). In that case, $\nu^*$ will simply be equal to $P(H)_{H_\mathrm{f}}$.
+
+In set notation, above is same as saying:
+$$
+\nu^* \in ( 0, P(H)_{H_\mathrm{f}} ]
+$$
+
+Let's assume instead of being proportional, $\nu$ was set equal to $\nu^*$. In that case, as $\nu^*$ approached very close to $P(H)_{H_\mathrm{f}}$, $\nu$ will become approximately equal to $P(H)_{H_\mathrm{f}}$. If that was the case the base gas fee as defined in $(48)$ will become 0. But that would be devastating to the network!
+
+To avoid this situation the effect of gas consumed on mechanism is dampened. This is done by introducing a global constant $\xi$ a.k.a _base fee max change denominator_.
+Currently $\xi$ is set to 8:
+$$
+\xi \equiv 8 \tag{53}
+$$
+
+Instead of setting $\nu$ equal to $\nu^*$, we divide the $\nu^*$ by $\xi$:
+$$
+\nu \equiv \lfloor \frac{\nu^*}{\xi} \rfloor \ \ (\text{if} \ \ P(H)_{H_\mathrm{g}} \lt \tau)
+$$
+
+Now, even if $\nu^*$ becomes equal to $P(H)_{H_\mathrm{f}}$, $\nu$ will be 1/8th of $P(H)_{H_\mathrm{f}}$ at max. Thus, the current block's fee can only be changed 1/8th or 12.5% of parent block's fee.
+
+That explains the base fee adjustment mechanism. The logic for the last case $P(H)_{H_\mathrm{f}} \gt \tau$ can be followed the same as the third one to reach similar conclusion.
+
+$\nu$ and $\nu^*$ is laid out in paper as:
+$$
+\nu^* \equiv \begin{dcases}
+\lfloor \frac{ P(H)_{H_\mathrm{f}} \times (\tau - P(H)_{H_\mathrm{g}}) }{\tau} \rfloor \ \ \text{if} \ \ P(H)_{H_\mathrm{g}} \lt \tau \\
+\lfloor \frac{ P(H)_{H_\mathrm{f}} \times (P(H)_{H_\mathrm{g}} - \tau) }{\tau} \rfloor \ \ \text{if} \ \ P(H)_{H_\mathrm{g}} \gt \tau \tag{51}
+\end{dcases}
+$$
+
+$$
+\nu \equiv \begin{dcases}
+\lfloor \frac{\nu^*}{\xi} \rfloor \ \ \text{if} \ \ P(H)_{H_\mathrm{g}} \lt \tau \\
+\text{max}(\lfloor \frac{\nu^*}{\xi} \rfloor, 1) \ \ \text{if} \ \ P(H)_{H_\mathrm{g}} \gt \tau
+\end{dcases} \tag{52}
+$$
+
+A minor difference is for case $P(H)_{H_\mathrm{g}} \gt \tau$ for value of $\nu$ as in that case it may assume value 0 if we inspect $(51)$ for that case. For that case, we simply assert using $\text{max}$ that minimum value of $\nu$ can be 1.
+
+The canonical gas limit $H_{\mathrm{l}}$ of block is constrained to be within certain tight bound:
+$$
+\displaylines{
+H_{\mathrm{l}} \lt P(H)_{H_{\mathrm{l}^{\prime}}} + \lfloor \frac{P(H)_{H_{\mathrm{l}^{\prime}}}}{1024} \rfloor \ \ \land \\
+H_{\mathrm{l}} \gt P(H)_{H_{\mathrm{l}^{\prime}}} - \lfloor \frac{P(H)_{H_{\mathrm{l}^{\prime}}}}{1024} \rfloor \ \ \land \\
+H_{\mathrm{l}} \ge 5000 \tag{54}
+}
+$$
+
+Notice that $P(H)_{H_{\mathrm{l}^{\prime}}}$ is not exactly parent block gas limit but instead a slightly adjusted value of actual parent block gas limit $P(H)_{H_{\mathrm{l}}}$. This value is adjusted from the _London_ fork i.e. at $F_{\text{London}}$ block and by $\rho$ - the _elastic multiplier_. Precisely:
+$$
+P(H)_{H_{\mathrm{l}^{\prime}}} \equiv \begin{dcases}
+P(H)_{H_{\mathrm{l}}} \times \rho \ \ \text{if} \ H_{\mathrm{i}} = F_{\text{London}} \\
+P(H)_{H_{\mathrm{l}}} \ \ \text{if} \ H_{\mathrm{i}} \gt F_{\text{London}} 
+\end{dcases} \tag{55}
+$$
+
+$\rho$ is multiplied at _London_ fork because that is also where base fee per gas was redefined with $(48)$ above. Notice that at that point the target $\tau$ for gas consumption in block starts to be calculated as parent block gas limit $P(H)_{H_{\mathrm{l}}}$ divided by same $\rho$ (see $(49)$). From this information we can infer that $P(H)_{H_{\mathrm{l}}}$ is updated by multiplying by $\rho$ in $(54)$ to avoid [discontinuity](https://en.wikipedia.org/wiki/Classification_of_discontinuities) in gas usage graph. 
+
+The block timestamp $H_{\mathrm{s}}$ is constrained to be strictly greater than parent block timestamp:
+$$
+H_{\mathrm{s}} \gt P(H)_{H_{\mathrm{s}}} \tag{56}
+$$
+
+From _Paris_ fork (change in consensus mechanism from _proof of work_ to _proof of stake_) deprecated multiple block header properties:
+- $\mathbf{mixHash}$, $H_{\mathrm{m}}$ has been replanced by $\mathbf{prevRandao}$, $H_{\mathrm{a}}$
+- $\mathbf{ommersHash}$ is set to a constant: $H_{\mathrm{o}} \equiv \mathtt{KEC}(\mathtt{RLP}())$
+- $\mathbf{difficulty}$ is set to a constant: $H_{\mathrm{d}} \equiv 0$
+- $\mathbf{nonce}$ is set to a constant: $H_{\mathrm{n}} \equiv \mathtt{0x0000000000000000}$
+
+Finally, we can define validity of a block header, $V(H)$:
+- Gas used must be less than or equal to the gas limit: $H_{\mathrm{g}} \le H_{\mathrm{l}}$
+- $H_{\mathrm{l}}$ must be constrained by $(54)$
+- $H_{\mathrm{s}}$ must be constrained by $(56)$
+- Block number must be equal to parent block number incremented by 1: $H_{\mathrm{i}} = P(H)_{H_{\mathrm{i}}} + 1$
+- The $\mathbf{extraData}$ field must be 32 bytes at most in size: $\lVert H_{\mathrm{x}} \rVert \le 32$
+- The block's base gas fee must be determined as defined in $(48)$: $H_{\mathrm{f}} = F(H)$
+- Deprecate fields as defined in $(57)$, $(58)$ and $(59)$
+- $H_{\mathrm{a}}$ must be determined  [Beacon Chain](https://ethereum.org/en/roadmap/beacon-chain/) (consensus): $H_{\mathrm{a}} = \mathtt{PREVRANDAO}()$
+
+Combining all constraints defines $V(H)$ formally in paper as:
+$$
+\displaylines{
+V(H) \equiv H_{\mathrm{g}} \le H_{\mathrm{l}} \ \ \land \\
+H_{\mathrm{l}} \lt P(H)_{H_{\mathrm{l}^{\prime}}} + \lfloor \frac{P(H)_{H_{\mathrm{l}^{\prime}}}}{1024} \rfloor \ \ \land \\
+H_{\mathrm{l}} \gt P(H)_{H_{\mathrm{l}^{\prime}}} - \lfloor \frac{P(H)_{H_{\mathrm{l}^{\prime}}}}{1024} \rfloor \ \ \land \\
+H_{\mathrm{l}} \ge 5000 \ \ \land \\ 
+H_{\mathrm{i}} = P(H)_{H_{\mathrm{i}}} + 1 \ \ \land \\
+\lVert H_{\mathrm{x}} \rVert \le 32 \ \ \land \\
+H_{\mathrm{f}} = F(H) \ \ \land \\
+H_{\mathrm{o}} \equiv \mathtt{KEC}(\mathtt{RLP}()) \ \ \land \\
+H_{\mathrm{d}} \equiv 0 \ \ \land \\
+H_{\mathrm{n}} \equiv \mathtt{0x0000000000000000} \ \ \land \\
+H_{\mathrm{a}} = \mathtt{PREVRANDAO}() \tag{60}
+}
+$$
+
+And that wraps up the blocks! Up next we see **Gas and Payment**.
