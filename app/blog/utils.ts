@@ -21,9 +21,11 @@ function parseFrontmatter(fileContent: string) {
     const [key, ...valueArr] = line.split(': ');
     let value = valueArr.join(': ').trim();
     value = value.replace(/^['"](.*)['"]$/, '$1'); // Remove quotes
+    //@ts-ignore
     metadata[key.trim() as keyof Metadata] = value;
   });
 
+  //@ts-ignore
   metadata.math = metadata.math === 'true';
 
   return { metadata: metadata as Metadata, content };
