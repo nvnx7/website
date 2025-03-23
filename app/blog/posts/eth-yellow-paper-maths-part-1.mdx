@@ -1,15 +1,18 @@
 ---
-title: 'Ethereum Yellow Paper Mathematics Deciphered | Part 1: World State'
+title: "Ethereum Yellow Paper Deciphered | Part 1: World State"
 publishedAt: "2022-07-26"
-summary: "This post is part of series of articles that try to decipher mathematics in ethereum yellow paper, so that it makes sense to the reader and convey their meaning"
+summary: "This post is part of series of articles that try to decipher ethereum yellow paper, so that it makes sense to the reader and convey the meaning"
 math: true
 ---
+
+_Note that this post is updated till the **Shanghai** version of the ethereum yellow paper._
 
 This part of the series will cover section 2 of the [Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf), which explains world state.
 
 I assume you've already gone through conventions defined in Part 0. If you haven't yet, I highly recommend you to go check it out first.
 
 ## World State
+
 Ethereum can be considered as a transaction based [state machine](https://statecharts.dev/what-is-a-state-machine.html). It begins with a genesis state and by executing transactions, it goes to a new state - a valid one enforced by a set of rules.
 The state of this state machine is termed - "world state" and denoted by $\boldsymbol{\sigma}$. The $\boldsymbol{\sigma}$ is, simply put, a mapping between account addresses and corresponding account states as you'll see more later.
 
@@ -18,9 +21,9 @@ The state of this state machine is termed - "world state" and denoted by $\bolds
 
 Address     AccountState
 ----------------------------------------------------------------
-address1 -> accountState1(nonce, balance, storageRoot, codeHash)
-address2 -> accountState2(nonce, balance, storageRoot, codeHash)
-address3 -> accountState3(nonce, balance, storageRoot, codeHash)
+address1 -> (nonce, balance, storageRoot, codeHash)
+address2 -> (nonce, balance, storageRoot, codeHash)
+address3 -> (nonce, balance, storageRoot, codeHash)
         .
         .
 ```
@@ -32,8 +35,9 @@ $$
 $$
 
 where,
+
 - $\boldsymbol{\sigma}_t$ is the world state at some time $t$
-- $T$ is a single transaction tuple with multiple constituents
+- $T$ is a transaction represented with a tuple with its constituents
 - $\Upsilon$ is the state transition function
 
 When given the current state $\boldsymbol{\sigma}_t$ and a transaction $T$, the state transition function $\Upsilon$ is defined to be a function that will generate a valid next state $\boldsymbol{\sigma}_{t+1}$.
@@ -48,14 +52,14 @@ $$
 \displaylines{
 \boldsymbol{\sigma}_{t+1} \equiv \Upsilon(\boldsymbol{\sigma}_{t}, T_0) \\
 \boldsymbol{\sigma}_{t+2} \equiv \Upsilon(\boldsymbol{\sigma}_{t+1},T_1) \\
-\boldsymbol{\sigma}_{t+3} \equiv \Upsilon(\boldsymbol{\sigma}_{t+2},T_2) 
+\boldsymbol{\sigma}_{t+3} \equiv \Upsilon(\boldsymbol{\sigma}_{t+2},T_2)
 }
 $$
-
 
 and so on...
 
 Above three can be combined to be written as:
+
 $$
 \boldsymbol{\sigma}_{t+3} \equiv \Upsilon(
     \Upsilon(
@@ -65,29 +69,35 @@ $$
 $$
 
 Now, we introduce another state-transition function $\Pi$ from paper,
+
 $$
 \boldsymbol{\sigma}_{t+1} \equiv \Pi(\boldsymbol{\sigma}_t, B) \tag{2}
 $$
 
 where,
+
 - $\boldsymbol{\sigma}_t$ is the world state at time $t$
 - $B$ is a single block, represented as a tuple
 - $\Pi$ is the state transition function at block level
 
 $\Pi$ may look similar to $\Upsilon$, but notice that $\Upsilon$ transitions state at transaction level. While $\Pi$ transitions state at block level. It transitions the world state, $\boldsymbol{\sigma}$, to a new state by including and finalizing all the transactions in the block $B$.
 
-The block is a tuple with multiple components, one of which is a list of transactions (precisely, a list of transaction tuples),  $\mathbf{T} = (T_0, T_1. T_2, \ldots)$
+The block is a tuple with multiple components, one of which is a list of transactions (precisely, a list of transaction tuples), $\mathbf{T} = (T_0, T_1. T_2, \ldots)$
 
 $$
 B \equiv (\ldots, \mathbf{T}, \ldots) \\\
 $$
+
 which is same as-
+
 $$
 B \equiv (.., (T_0, T_1. T_2,...), ..)  \tag{3}
 $$
+
 _(**Note**: ellipsis before and after the list of transactions, $\mathbf{T}$ abbreviate other components of the block tuple. Other components of $B$ will be introduced later in series.)_
 
 In other words $\Pi$ is same as applying $\Upsilon$ multiple times to subsequent transactions in block $B$:
+
 $$
 \Pi(\boldsymbol{\sigma}, B) \equiv \Upsilon(
     \Upsilon(\boldsymbol{\sigma}, T_0), T_1 \tag{4}
@@ -97,15 +107,17 @@ $$
 This might seem a bit confusing, but remember that all of the above are equivalences ($\equiv$) not equalities ($=$).
 
 ## Account State
-As said before, the world state, $\boldsymbol{\sigma}$, is a mapping between addresses and their account states. The account state is a RLP-serialized data-structure. For an address $a$, the account state can be denoted by $\boldsymbol{\sigma}[a]$ - similar to accessing a value in a map by a key (here, $a$) in programming.
+
+As said before, the world state, $\boldsymbol{\sigma}$, is a mapping between account addresses and corresponding account states. The account state is a RLP-serialized data-structure. For an address $a$, the account state can be denoted by $\boldsymbol{\sigma}[a]$ - similar to accessing a value in a map by a key (here, $a$) in programming.
 
 An account state $\boldsymbol{\sigma}[a]$ comprises of the following components -
+
 - $\mathbf{nonce}$ ($\boldsymbol{\sigma}[a]_\mathrm{n}$): Nonce is number of transactions sent by this address, if it is an EOA, or it is number of contract-creations made by this address if it is a contract.
 - $\mathbf{balance}$ ($\boldsymbol{\sigma}[a]_\mathrm{b}$): Number of Wei owned by this address.
 
 - $\mathbf{storageRoot}$ ($\boldsymbol{\sigma}[a]_\mathrm{s}$): A 256-bit hash of root node of a [Merkle Patricia Trie](https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/) data-structure. This MPT structure holds contents of this account. The contents in the MPT are encoded mapping of 256-bit hash of 256-bit keys (aka storage slot) to RLP-encoded 256-bit integers as values (representing the account content). In simple terms, you might know this "content" as contract storage. As expected, only contract accounts can have non-empty storage. EOAs always have empty storage.
 
-- $\mathbf{codeHash}$ ($\boldsymbol{\sigma}[a]_\mathrm{c}$): The hash of the EVM code (aka bytecode) of this account. Remember that only contracts have bytecode, EOAs have empty bytecode. Thus, if $\mathbf{b}$ is the bytecode then,  $\boldsymbol{\sigma}[a]_\mathrm{c} = \mathtt{KEC}(\mathbf{b})$. And $\mathbf{b} = ()$, always for an EOA account - meaning $\mathbf{codeHash}$ for an EOA is always hash of an empty string.
+- $\mathbf{codeHash}$ ($\boldsymbol{\sigma}[a]_\mathrm{c}$): The hash of the EVM code (aka bytecode) of this account. Remember that only contracts have bytecode, EOAs have empty bytecode. Thus, if $\mathbf{b}$ is the bytecode then, $\boldsymbol{\sigma}[a]_\mathrm{c} = \mathtt{KEC}(\mathbf{b})$. And $\mathbf{b} = ()$, always for an EOA account - meaning $\mathbf{codeHash}$ for an EOA is always hash of an empty string.
 
 Paper defines a serialization function $L_I$ for a key $k$ and a value $v$ pair that outputs suitable item for insertion into the account storage Merkle Patricia Trie. In this regard, $k$ must be keccak-256 hashed and $v$ must be RLP-encoded, as discussed earlier above in $\mathbf{storageRoot}$ component. Hence,
 
@@ -135,7 +147,7 @@ _Note that in the equivalence above, the subscript $\mathbf{s}$ (bolder, on LHS)
 
 We already know that $\boldsymbol{\sigma}[a]_{\mathrm{s}}$ on RHS is the $\mathbf{storageRoot}$ defined earlier. If you look carefully, $\mathtt{TRIE}( L_I^*( \boldsymbol{\sigma}[a]_{\mathbf{s}} ) )$ is actually defines the same Merkle Patricia Trie whose root's hash is $\mathbf{storageRoot}$. How?
 
-$\boldsymbol{\sigma}[a]_{\mathbf{s}}$ (bolder $\mathbf{s}$) represents a list of contract's storage key-value pairs (raw integer key and raw storage content) corresponding to an account, $a$. The $L_I^*$  then hashes each of the keys and RLP-encodes each of the values. Just as defined at $(iii)$. And with these encoded inputs the Merkle Patricia Trie is constructed with $\mathtt{TRIE}$ function.
+$\boldsymbol{\sigma}[a]_{\mathbf{s}}$ (bolder $\mathbf{s}$) represents a list of contract's storage key-value pairs (raw integer key and raw storage content) corresponding to an account, $a$. The $L_I^*$ then hashes each of the keys and RLP-encodes each of the values. Just as defined at $(iii)$. And with these encoded inputs the Merkle Patricia Trie is constructed with $\mathtt{TRIE}$ function.
 
 The equivalence $(7)$ is made just for convenience since we typically refer to the trie's underlying set of key-value pairs and NOT just the hash of storage trie root $\boldsymbol{\sigma}[a]_{\mathrm{s}}$. It is assumed from now on that the latter is equivalent to former i.e. $\boldsymbol{\sigma}_\mathrm{s}$ maybe used to refer to the MPT and not just the simple hash value.
 
@@ -174,6 +186,7 @@ Remember, that the world-state is a mapping from account address to account stat
 This set of items yielded by $L_\mathrm{S}$ function when put into a Merkle Patricia Trie (using $\mathtt{TRIE}$ function), provides a short identity for the world-state. This identity is nothing but the hash of root of this trie. Keep in mind that this MPT is not the same one as defined for $\mathbf{storageRoot}$ for a single account. This MPT encompasses all the accounts with it's contents. You might know this as "State Trie".
 
 It is assumed that account state can either be non-existent or valid if existent. Mathematically,
+
 $$
 \forall a: \boldsymbol{\sigma}[a] = \varnothing  \vee  (a \in \mathbb{B}_{20} \wedge v(\boldsymbol{\sigma}[a])) \tag{12}
 $$
@@ -187,6 +200,7 @@ $$
 And that concludes this part of the series! Next part will be all about transactions. Stay tuned!
 
 ## Resources
+
 - [State Machine](https://statecharts.dev/what-is-a-state-machine.html)
 - [Ethereum Accounts](https://ethereum.org/en/developers/docs/accounts/)
 - [Merkle Patricia Trie](https://ethereum.org/en/developers/docs/data-structures-and-encoding/patricia-merkle-trie/)

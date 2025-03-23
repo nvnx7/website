@@ -1,9 +1,12 @@
 ---
-title: 'Ethereum Yellow Paper Mathematics Deciphered | Part 2: Transaction'
+title: "Ethereum Yellow Paper Deciphered | Part 2: Transaction"
 publishedAt: "2022-08-06"
-summary: "This post is part of series of articles that try to decipher mathematics in ethereum yellow paper, so that it makes sense to the reader and convey their meaning"
+summary: "This post is part of series of articles that try to decipher ethereum yellow paper, so that it makes sense to the reader and convey the meaning"
 math: true
 ---
+
+_Note that this post is updated till the **Shanghai** version of the ethereum yellow paper._
+
 This part of the series ventures into section 4 of the [Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf), to describe transactions.
 
 Be sure to check out Part 0, if you haven't yet to get conventions right.
@@ -15,7 +18,9 @@ As said in previous part, transactions are what that drive the ethereum state ma
 These are cryptographically signed instructions are signed by the sender which can only be an EOA, not a contract. This may seem confusing to Solidity developers. Since a contract can also call other contract & be a sender (`msg.sender`) in context of the called contract - right? Well, yes but the originator of the transaction (`tx.origin`) i.e. the entity which initialized the the transaction in the first place is always an EOA. A transaction can either result in a message call to some existing contract or creation of a new contract.
 
 ### Types
+
 As of _London_ version of the protocol there are 3 transaction types (see [EIP2718](https://eips.ethereum.org/EIPS/eip-2718) and [EIP2930](https://eips.ethereum.org/EIPS/eip-2930)):
+
 - **0** (legacy): The legacy transactions, before the introduction of the new transaction types.
 - **1** ([EIP2930](https://eips.ethereum.org/EIPS/eip-2930)): These transactions specify additional fields in the transaction tuple (see below).
 - **2** ([EIP-1559](https://eips.ethereum.org/EIPS/eip-1559)):
@@ -23,7 +28,9 @@ As of _London_ version of the protocol there are 3 transaction types (see [EIP27
 ## Transaction Anatomy
 
 ### Common Fields
+
 All transactions regardless of type/action have a number of common fields:
+
 - $\mathbf{type}$ ($T_{\mathrm{x}}$): EIP-2718 transaction type.
 - $\mathbf{nonce}$ ($T_\mathrm{n}$): Nonce of sender i.e. no. of transactions sent by sender
 - $\mathbf{gasPrice}$ ($T_\mathrm{p}$): Gas price of this transaction i.e wei per unit of gas paid for this transaction
@@ -33,26 +40,34 @@ All transactions regardless of type/action have a number of common fields:
 - $\mathbf{r}$, $\mathbf{s}$ ($T_\mathrm{r}, T_\mathrm{s}$): Values that correspond to signature of the transaction and used to verify, cryptographically, the sender of the transaction.
 
 ### Type-1 & Type-2 Tx
+
 A type-1 and type-2 transactions (i.e. $T_{\mathrm{x}} = 1$ or $T_{\mathrm{x}} = 2$) has some additional fields:
-- $\mathbf{accessList}$ ($T_\mathbf{A}$): List of [access entries](https://www.evm.codes/about#accesssets) to warm-up. Each list item is a tuple $E$. Tuple $E$ has two items - and account address and a list of storage keys, i.e. $E \equiv (E_{\mathrm{a}}, E_{\mathbf{s}})$.  
-  
-_Notice the subscript $\mathbf{s}$ in $E_{\mathbf{s}}$ is bold lowercase - meaning it's a sequence not some scalar value according to convention. You an specify these access lists using [ethers](https://docs.ethers.io/v5/api/providers/types/#providers-AccessList), for example, while interacting with a contract._
+
+- $\mathbf{accessList}$ ($T_\mathbf{A}$): List of [access entries](https://www.evm.codes/about#accesssets) to warm-up. Each list item is a tuple $E$. Tuple $E$ has two items - and account address and a list of storage keys, i.e. $E \equiv (E_{\mathrm{a}}, E_{\mathbf{s}})$.
+
+_Notice the subscript $\mathbf{s}$ in $E_{\mathbf{s}}$ is bold lowercase - meaning it's a sequence not some scalar value according to convention. You an specify these access lists using [ethers](https://docs.ethers.io/v5/api/providers/types/#providers-AccessList), for example, while interacting with a contract.\_
 
 - $\mathbf{chainId}$ ($T_\mathrm{c}$): Chain id. Must be equal to network chain id, $\beta$.
 - $\mathbf{yParity}$ ($T_\mathrm{y}$): Y-parity of the transaction. Used to compute the $\mathbf{v}$ value of the signature. See [this](https://ethereum.stackexchange.com/questions/15766/what-does-v-r-s-in-eth-gettransactionbyhash-mean).
 
 ### Type-2 Tx
+
 The gas price in transaction type-2 ($T_{\mathrm{x}} = 2$) is specified differently than type-1 and type-0. By EIP-1559, these transactions explicitly limit the priority fee that is paid for the transaction. This is done by two fields in type-2 tx:
+
 - $\mathbf{maxFeePerGas}$ ($T_\mathrm{m}$): Scaler value representing max amount of wei to be paid per unit of gas for execution of transaction.
 - $\mathbf{maxPriorityFeePerGas}$ ($T_\mathrm{f}$): Scaler value representing max amount of wei paid to miner (block's fee recipient) as incentive to include the transaction in block.
 
 ### Type-1 & Type-0 Tx
+
 In contrast to max fee amounts per gas in type-2 transactions, type-0 and type-1 transactions simply specify gas price as single value:
+
 - $\mathbf{gasPrice}$ ($T_\mathrm{p}$): Scaler value representing amount of wei per unit gas to be paid to miner for all computation costs for execution of this transaction.
 
 ### Type-0 (Legacy) Tx
+
 The legacy ($T_{\mathrm{x}} = 0$) do not have $\mathbf{accessList}$ (i.e. $T_{\mathbf{A}} = ()$). However, $\mathbf{chainId}$ and $\mathbf{yParity}$ are combined into a single value $\mathbf{w}$:
-- $\mathbf{w}$ ($T_\mathrm{w}$): A scalar value that encodes $\mathbf{yParity}$ ($T_\mathrm{y}$) and, if present, the $\mathbf{chainId}$ ($\beta$).  So,  
+
+- $\mathbf{w}$ ($T_\mathrm{w}$): A scalar value that encodes $\mathbf{yParity}$ ($T_\mathrm{y}$) and, if present, the $\mathbf{chainId}$ ($\beta$). So,
 
 $$
 T_{\mathrm{w}} = \begin{cases}
@@ -64,19 +79,22 @@ $$
 See [EIP-155](https://eips.ethereum.org/EIPS/eip-155).
 
 ### Contract Creation Tx
-If the transaction is a contract creation transaction, it also contains: 
+
+If the transaction is a contract creation transaction, it also contains:
+
 - $\mathbf{init}$ ($T_\mathbf{i}$): The byte array specifying initialization process of contract. You might know it as the **creation bytecode** fragment of the contract bytecode.
 
-_Keep in mind that in contract creation transactions $\mathbf{to}$ is set to null i.e. $T_\mathrm{t} = \varnothing$_
+_Keep in mind that in contract creation transactions $\mathbf{to}$ is set to null i.e. $T_\mathrm{t} = \varnothing$._
 
 $\mathbf{init}$ fragment of the bytecode returns the $\mathbf{body}$, aka **runtime bytecode**, fragment of the bytecode to EVM, after which $\mathbf{init}$ part is discarded and $\mathbf{body}$ is what lives on chain & executed in response to calls. The $\mathbf{init}$ is always concatenated with the $\mathbf{body}$ in a contract creation transaction to be sent.
 
 ### Message Call Tx
+
 Now, if transaction is a message call transaction instead of contract creation, it has:
 
 $\mathbf{data}$ ($T_\mathbf{d}$): A byte array that is input data to the called contract.
 
-_Let me disambiguate something for folks who've used ethereum libraries like ethers or web3.js. While creating a custom transaction object using these, $\mathbf{data}$ and ($\mathbf{init}$ + $\mathbf{body}$) is generally specified at same key - **data**. Library interprets the **data** as $\mathbf{data}$ or ($\mathbf{init}$ + $\mathbf{body}$) depending on **to** key in transaction object. If **to** is null  it's ($\mathbf{init}$ + $\mathbf{body}$), i.e. contract creation, otherwise $\mathbf{data}$, a message call._
+_Let me disambiguate something for folks who've used ethereum libraries like ethers or web3.js. While creating a custom transaction object using these, $\mathbf{data}$ and ($\mathbf{init}$ + $\mathbf{body}$) is generally specified at same key - **data**. Library interprets the **data** as $\mathbf{data}$ or ($\mathbf{init}$ + $\mathbf{body}$) depending on **to** key in transaction object. If **to** is null it's ($\mathbf{init}$ + $\mathbf{body}$), i.e. contract creation, otherwise $\mathbf{data}$, a message call._
 
 The paper defines the transaction collapse function, $L_T(T)$ as:
 
@@ -89,6 +107,7 @@ L_T(T) \equiv \begin{cases}
 $$
 
 where,
+
 $$
 \mathbf{p} \equiv \begin{cases}
 T_{\mathbf{i}} & \text{if}\ T_{\mathrm{t}} = \varnothing \\\\
@@ -110,9 +129,10 @@ T_{\mathrm{w}} \in \mathbb{N}_{256} \ \wedge \ T_{\mathrm{r}} \in \mathbb{N}_{25
 T_{\mathrm{y}} \in \mathbb{N}_{1} \ \wedge \ T_{\mathbf{d}} \in \mathbb{B} \ \wedge \ T_{\mathbf{i}} \in \mathbb{B} \ \wedge \\
 T_{\mathrm{m}} \in \mathbb{N}_{256} \ \wedge \ T_{\mathrm{f}} \in \mathbb{N}_{256}
 }
-$$  
+$$
 
 where $\mathbb{N}_{\mathrm{n}}$ is a set of all natural numbers less that $2^{\mathrm{n}}$. Same as,
+
 $$
 \mathbb{N}_{\mathrm{n}} = \\{ P: P \in \mathbb{N} \wedge P \lt 2^n \\} \tag{19}
 $$
@@ -120,7 +140,7 @@ $$
 The case with $T_{\mathbf{t}}$ is a bit difference because (as you might've guessed) depends on whether transaction is contract creation or message call. In case of former ($T_{\mathrm{t}} = \varnothing$) it is simply RLP empty byte sequence, otherwise normal 20-byte public address:
 
 $$
-T_{\mathbf{t}} \in 
+T_{\mathbf{t}} \in
 \begin{cases} \mathbb{B}_{20} & \text{if} \quad T_{\mathrm{t}} \neq \varnothing \\\\
 \mathbb{B}_{0} & \text{otherwise}\end{cases} \tag{20}
 $$
@@ -128,12 +148,14 @@ $$
 ## The Withdrawal
 
 The Withdrawal $W$ refers to tuple containing information for withdrawal of staked Ether of consensus layer validators. $W$ has following fields:
+
 - $\mathbf{globalIndex}$ ($W_\mathrm{g}$): Incrementing unique identifier/index for this withdrawal.
 - $\mathbf{validatorIndex}$ ($W_\mathrm{v}$): Validator index the withdrawal corresponds to.
 - $\mathbf{recipient}$ ($W_\mathrm{r}$): The recipient address that will get withdrawn Ether.
 - $\mathbf{amount}$ ($W_\mathrm{a}$): Amount in wei to be denominated.
 
 $W$ is serialized using $L_{W}$ function:
+
 $$
 L_{W} \equiv (W_\mathrm{g}, W_\mathrm{v}, W_\mathrm{r}, W_\mathrm{a}) \tag{21}
 $$

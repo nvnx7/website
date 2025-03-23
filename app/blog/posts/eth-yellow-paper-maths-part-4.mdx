@@ -1,0 +1,416 @@
+---
+title: "Ethereum Yellow Paper Deciphered | Part 4: Transaction Execution"
+publishedAt: "2022-12-03"
+summary: "This post is part of series of articles that try to decipher ethereum yellow paper, so that it makes sense to the reader and convey the meaning"
+math: true
+---
+
+_Note that this post is updated till the **Shanghai** version of the ethereum yellow paper._
+
+This part of the series dives into section 6 of the [Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf) that describes the execution of transactions.
+
+If you haven't yet, go through Part 0 of this series to get conventions right.
+
+## Transaction Execution
+
+We have already learnt about what forms a transaction in Part 2 of this series. This part covers the deep dive details of how a given transaction, $T$ is executed leading to the final state change.
+
+Before a transaction is executed, it must go through an initial tests for validity. These tests are described by $(69)$ below in later section. First, lets make sense of execution parameters so that we define this validity better.
+
+Remember from Part 1 that transaction execution in Ethereum is defined by the state transition function, $\Upsilon$. The transaction is executed at current state $\boldsymbol{\sigma}$ to get to next state $\boldsymbol{\sigma}^{\prime}$:
+
+$$
+\boldsymbol{\sigma}^{\prime} \equiv \Upsilon(\boldsymbol{\sigma}, T) \tag{61}
+$$
+
+$\boldsymbol{\sigma}^{\prime}$ is referred as post-transactional state or the final state.
+
+### Accrued Transaction Substate
+
+The next world state is finalized only when a block a finalized with all of the transactions in it are executed, not when a single transaction is executed. The transactions in a block are executed one by one taking the world state through multiple states, until all of the transactions are executed and a new world state is finalized.
+
+Furthermore, execution of a single transaction is divided between 4 phases. In each such the original state $\boldsymbol{\sigma}$ is updated until the final state $\boldsymbol{\sigma}^{\prime}$ is reached completing execution.
+
+Throughout this execution involving multiple phases certain information is accrued called **_accrued transaction substate_** or **_accrued substate_**, $A$. It includes:
+
+- **Self-destruct set**, $A_{\mathbf{s}}$: Set of accounts that will be discarded after this transaction completes. This could be contract whose [`selfdestruct`](https://docs.soliditylang.org/en/latest/introduction-to-smart-contracts.html#deactivate-and-self-destruct) was called.
+- **Log series**, $A_{\mathbf{l}}$: Logged data such as emitted events during transaction execution.
+- **Set of touched accounts**, $A_{\mathbf{t}}$: Accounts that are accessed during transaction execution. See [this](https://ethereum.stackexchange.com/questions/154938/what-are-touched-accounts).
+- **Refund balance**, $A_{r}$: Any excess fee to be refunded to fee payer.
+- **Set of accessed accounts**, $A_{\mathbf{a}}$: Account addresses accessed during execution of transaction. The [precompiled addresses](https://www.evm.codes/precompiled) are in this set by default.
+- **Accessed storage keys**, $A_{\mathbf{K}}$: Set of accessed contract storage keys, each represented by tuple of address and storage slot accessed there.
+
+$$
+A \equiv (A_{\mathbf{s}}, A_{\mathbf{l}}, A_{\mathbf{t}}, A_{r}, A_{\mathbf{a}}, A_{\mathbf{K}}) \tag{62}
+$$
+
+An empty substate, $A_0$ consists of no self-destructs, no logs, no touched accounts, zero refund balance, no accessed storage and only precompiled contract addresses (i.e. set $\pi$) in accessed addresses.
+
+$$
+A_0 \equiv (\varnothing, (), \varnothing, 0, \pi, \varnothing) \tag{63}
+$$
+
+The substate $A$ is cleared after transaction execution completes.
+
+Here we limit our scope to transition (via $\Upsilon$) the world state at $\boldsymbol{\sigma}$ to final state $\boldsymbol{\sigma}^{\prime}$. Do not confuse the state $\boldsymbol{\sigma}^{\prime}$ as when after block is finalized, it is the state after a transaction $T$ is executed successfully.
+
+### Validation
+
+Before laying out formal validation of transaction that we talked about earlier, let's defined some related parameters.
+
+#### Intrinsic gas, $g_0$
+
+First, intrinsic gas which is denoted by $g_0$. $g_0$ is the amount of gas required to be paid for before any transaction execution occurs. So, $g_0$ will not account for any gas spent on computation (with contract code) in a transaction.
+
+$g_0$ and is sum of multiple gas fragments. These are:
+
+1. **Transaction data costs**: These are influenced by the initialization code ($T_{\mathbf{i}}$) bytes and calldata bytes ($T_{\mathbf{d}}$). Regardless of $T_{\mathbf{i}}$ or $T_{\mathbf{d}}$ bytes, the gas required of each zero byte is $G_{\text{txdatazero}}$ and each non-zero bytes is $G_{\text{txdatanonzero}}$. Summing gas for all bytes data gives:
+
+   $$
+   g_0 \equiv \sum_{i \in T_{\mathbf{i}}, T_{\mathbf{d}}} \begin{cases}
+   G_{\text{txdatazero}} \ \ \text{if} \ i = 0 \\
+   G_{\text{txdatanonzero}} \ \ \text{otherwise}
+   \end{cases} + \ ...
+   $$
+
+2. **Contract creation costs**: Recall that new contract creation transaction is specified by setting _to_ address to null i.e. $T_{\mathrm{t}} = \varnothing$. If transaction is contract creation, the gas is $G_{\text{txcreate}}$ plus additional cost, $G_{\text{initcodeword}}$ times number of words (32-bytes) in the initialization code $T_{\mathbf{i}}$.
+   $$
+   g_0 \equiv \begin{cases}
+   G_{\text{txcreate}} + R(\lVert T_{\mathbf{i}} \rVert) \ \ \text{if} \ T_{\mathrm{t}} = \varnothing \\
+   0 \ \ \ \text{otherwise}
+   \end{cases} + \ ...
+   $$
+
+where $R$ is _initcode cost function_:
+
+$$
+R(x) \equiv G_{\text{initcodeword}} \times \lceil \frac{x}{32} \rceil \tag{65}
+$$
+
+3. **Transaction cost**: Fixed gas cost paid for every transaction $G_{\text{transaction}}$ (21000).
+
+4. **Access entries warm up cost**: For each access entry from list of access entries $T_{\mathbf{A}}$ of a transaction $T$, there are two costs. First, cost for warming up an account $G_{\text{accesslistaddress}}$ at its address. Second, cost for warming up all storage slots accessed at that address i.e. $\lVert T_{\mathbf{A}}[j]_{\mathbf{s}} \rVert \times G_{\text{accesslistaddress}}$.
+   Note that $\lVert T_{\mathbf{A}}[j]_{\mathbf{s}} \rVert$ represents number of accessed storage slots of entry at index $j$ in access entries list and $G_{\text{accesslistaddress}}$ is cost for one storage slot access. So cost for all such items in access entries is:
+   $$
+   g_0 \equiv \sum_{j=0}^{\lVert T_{\mathbf{A}} \rVert - 1} (G_{\text{accesslistaddress}} + \lVert T_{\mathbf{A}}[j]_{\mathbf{s}} \rVert G_{\text{accesslistaddress}}) \ + ...
+   $$
+
+Finally, summing up all costs in terms of gas, we get:
+
+$$
+\displaylines{
+g_0 \equiv \sum_{i \in T_{\mathbf{i}}, T_{\mathbf{d}}} \begin{cases}
+G_{\text{txdatazero}} \ \ \ \text{if} \ i = 0 \\
+G_{\text{txdatanonzero}} \ \ \text{otherwise}
+\end{cases} \\
+
++ \begin{cases}
+G_{\text{txcreate}} + R(\lVert T_{\mathbf{i}} \rVert) \ \ \text{if} \ T_{\mathrm{t}} = \varnothing \\
+0 \ \ \ \text{otherwise}
+\end{cases} \\
+
++ \ G_{\text{transaction}} \\
+
++ \sum_{j=0}^{\lVert T_{\mathbf{A}} \rVert - 1} (G_{\text{accesslistaddress}} + \lVert T_{\mathbf{A}}[j]_{\mathbf{s}} \rVert G_{\text{accesslistaddress}}) \tag{64}
+}
+$$
+
+as defined in paper.
+
+#### Effective Gas Price, $p$
+
+The _effective gas price_ $p$ is the actual price (in wei) paid per unit of gas by the transaction signer. The transaction signer controls it and sets it to some sane value that is enough to incentivize the validator to include its transaction. The signer controls it by specifying gas price $T_{\mathrm{p}}$ for type-0 and type-1 transactions. For type-2 transactions, it is controlled by specifying the max fee per gas $T_{\mathrm{m}}$ and max priority fee per gas $T_{\mathrm{f}}$.
+
+$$
+p \equiv \begin{cases}
+T_{\mathrm{p}} \ \ \text{if} \ T_{\mathrm{x}} = 0 \lor T_{\mathrm{x}} = 1 \\
+f + H_{\mathrm{f}} \ \ \text{if} \ T_{\mathrm{x}} = 2
+\end{cases} \tag{66}
+$$
+
+where $f$ is _priority fee_.
+
+#### Priority Fee, $f$
+
+As evident from $(66)$ $p$ used to be simply $\mathbf{gasPrice}$ ($T_{\mathrm{p}}$) of type-0 and type-1 transactions.
+
+For type-2 transaction, with introduction of $T_{\mathrm{m}}$ and $T_{\mathrm{f}}$ it became sum two fees. First, $H_{\mathrm{f}}$, the block's $\mathbf{baseFeePerGas}$ - the amount that will be burned per unit of gas. And second, the priority fee $f$ which is amount of wei that is sent to validator as reward per unit of total gas consumed during transaction execution.
+
+Since $f$ is the reward (in wei) per gas given to validator after whatever left from burning according to $H_{\mathrm{f}}$ parameter, it is simply the difference between $T_{\mathrm{p}}$ and $H_{\mathrm{f}}$ for type-0 and type-1 transactions.
+For type-2 this difference is calculated between $T_{\mathrm{m}}$ and $H_{\mathrm{f}}$ instead. Additionally, for type-2 this reward is capped by $\mathbf{maxPriorityFeePerGas}$ ($T_{\mathrm{f}}$) of course. With this information, $f$ can be concisely calculated as:
+
+$$
+f \equiv \begin{cases}
+T_{\mathrm{p}} - H_{\mathrm{f}} \ \ \ \ \ \text{if} \ T_{\mathrm{x}} = 0 \lor T_{\mathrm{x}} = 1 \\
+min(T_{\mathrm{f}}, T_{\mathrm{m}} - H_{\mathrm{f}}) \ \ \text{if} \ T_{\mathrm{x}} = 2
+\end{cases} \tag{67}
+$$
+
+#### Up-front Cost, $v_0$
+
+Up-front cost $v_0$ is the total gas cost plus any ether value ($T_{\mathrm{v}}$) sent with the transaction. The total gas cost calculation depends of transaction type. For type-0 and type-1 transactions it is gas price times the gas limit i.e $T_{\mathrm{g}} T_{\mathrm{p}}$. For type-2 transactions specified max fee per gas times the gas limit i.e. $T_{\mathrm{g}} T_{\mathrm{m}}$:
+
+$$
+v_0 \equiv \begin{cases}
+T_{\mathrm{g}} T_{\mathrm{p}} + T_{\mathrm{v}} \ \ \ \text{if} \ T_{\mathrm{x}} = 0 \lor T_{\mathrm{x}} = 1 \\
+T_{\mathrm{g}} T_{\mathrm{m}} + T_{\mathrm{v}} \ \ \text{if} \ T_{\mathrm{x}} = 2
+\end{cases} \tag{68}
+$$
+
+$v_0$ accounts for the price of gas that will be consumed for execution of the transaction.
+
+#### Validity Check
+
+Now we come back to the validity check pre-transaction execution. The checks include:
+
+1. Sender of transaction, $T$ denoted by $S(T)$ must not be empty:
+
+   $$
+   S(T) \ne \varnothing
+   $$
+
+2. The code at sender account must be empty i.e. it should be EOA:
+
+   $$
+   \boldsymbol{\sigma}[S(T)]_{\mathrm{c}} = \mathtt{KEC}(())
+   $$
+
+3. Transaction nonce must be equal to sender account nonce:
+
+   $$
+   T_{\mathrm{n}} = \boldsymbol{\sigma}[S(T)]_{\mathrm{n}}
+   $$
+
+4. Intrinsic gas must be less than or equal to gas limit since gas limit is max allowed to use in the transaction:
+
+   $$
+   g_0 \leq T_{\mathrm{g}}
+   $$
+
+5. The transaction gas price must be greater than or equal to block's base fee per gas.
+   $$
+   m \geq H_{\mathrm{f}}
+   $$
+
+where,
+
+$$
+m \equiv \begin{cases}
+T_{\mathrm{p}} \ \ \text{if} \ T_{\mathrm{x}} = 0 \lor T_{\mathrm{x}} = 1 \\
+T_{\mathrm{m}} \ \ \text{if} \ T_{\mathrm{x}} = 2
+\end{cases} \tag{70}
+$$
+
+6. The initialization code, if any (for contract creation), must be less than 49152 bytes:
+   $$
+   n \leq 49152
+   $$
+
+where,
+
+$$
+n \equiv \begin{cases}
+\lVert T_{\mathrm{i}} \rVert \ \ \text{if} \ \ T_{\mathrm{t}} = \varnothing \\
+0 \ \ \ \text{otherwise}
+\end{cases} \tag{71}
+$$
+
+7. The block's gas limit must not be exceeded during successive execution of transactions in it. Therefore, the sum of gas consumed in current block by execution of transactions up to prior to current transaction ($T$) represented by, $\ell(B_{\mathbf{R}})_{\mathrm{u}}$ and current transaction's gas limit ($T_{\mathrm{g}}$) must be less current block's gas limit ($B_{\mathrm{H}_{\mathrm{l}}}$):
+   $$
+   T_{\mathrm{g}} + \ell(B_{\mathbf{R}})_{\mathrm{u}} \leq B_{\mathrm{H}_{\mathrm{l}}}
+   $$
+
+or,
+
+$$
+T_{\mathrm{g}} \leq B_{\mathrm{H}_{\mathrm{l}}} - \ell(B_{\mathbf{R}})_{\mathrm{u}}
+$$
+
+Combining all constraints we get:
+
+$$
+\displaylines{
+S(T) \ne \varnothing \ \land \\
+\boldsymbol{\sigma}[S(T)]_{\mathrm{c}} = \mathtt{KEC}(()) \ \land \\
+T_{\mathrm{n}} = \boldsymbol{\sigma}[S(T)]_{\mathrm{n}} \ \land \\
+g_0 \leq T_{\mathrm{g}} \ \land \\
+m \geq H_{\mathrm{f}} \ \land \\
+n \leq 49152 \ \land \\
+T_{\mathrm{g}} \leq B_{\mathrm{H}_{\mathrm{l}}} - \ell(B_{\mathbf{R}})_{\mathrm{u}}
+} \tag{69}
+$$
+
+For type-2 transactions additional constraint is that $\mathbf{maxPriorityFeePerGas}$ must not exceed $\mathbf{maxFeePerGas}$:
+
+$$
+T_{\mathrm{m}} \ge T_{\mathrm{f}} \tag{72}
+$$
+
+### Execution
+
+As told earlier, the execution of a transaction occurs through 4 phases to finally reach a final state $\boldsymbol{\sigma}^{\prime}$ after which any change is irrevocable.
+
+The four phases in the process to execution of transaction are:
+
+1. From current state, $\boldsymbol{\sigma}$ to checkpoint state, $\boldsymbol{\sigma}_0$
+2. From checkpoint state, $\boldsymbol{\sigma}_0$ to post-execution provisional state, $\boldsymbol{\sigma}_{\mathrm{P}}$
+3. From post-execution provisional state, $\boldsymbol{\sigma}_{\mathrm{P}}$ to pre-final state, $\boldsymbol{\sigma}^*$
+4. From pre-final state, $\boldsymbol{\sigma}^*$ to final state $\boldsymbol{\sigma}^{\prime}$
+
+Let's go through each phase one by one.
+
+#### 1. $\boldsymbol{\sigma} \boldsymbol{\rightarrow} \boldsymbol{\sigma}_0$
+
+The transition from current state $\boldsymbol{\sigma}$ to $\boldsymbol{\sigma}_0$ modifies only two properties of the current state - sender balance and sender nonce. All else remains same i.e.:
+
+$$
+\boldsymbol{\sigma}_0 \equiv \boldsymbol{\sigma} \ \ \text{except}\tag{73}
+$$
+
+except, the balance of sender account is deducted by only a part of the up-front cost ($v_0$) which is the gas cost in wei covering all gas specified as gas limit. This part is simply $T_{\mathrm{g}}p$:
+
+$$
+\boldsymbol{\sigma}_0[S(T)]_{\mathrm{b}} \equiv \boldsymbol{\sigma}[S(T)]_{\mathrm{b}} - T_{\mathrm{g}}p  \tag{74}
+$$
+
+and nonce of sender account is increased by 1:
+
+$$
+\boldsymbol{\sigma}_0[S(T)]_{\mathrm{n}} \equiv \boldsymbol{\sigma}[S(T)]_{\mathrm{n}} + 1 \tag{75}
+$$
+
+Note that even though we deduct cost covering all of the gas limit ($T_{\mathrm{g}}$) at this point, not all gas is necessarily exhausted. A part of it refunded later. Also note there is no computation performed in this phase.
+
+At this point the gas available, $g$ from the gas limit $T_{\mathrm{g}}$ is $T_{\mathrm{g}} - g_0$ since we only deduct intrinsic gas before doing any computation/execution.
+
+$$
+g \equiv T_{\mathrm{g}} - g_0 \tag{81}
+$$
+
+#### 2. $\boldsymbol{\sigma}_0 \boldsymbol{\rightarrow} \boldsymbol{\sigma}_{\mathrm{P}}$
+
+The $\boldsymbol{\sigma}_{\mathrm{P}}$ state is reached by performing the execution (including any computation with contract code) on the sent transaction. The computation involved can either be contract creation whose result is given by contract creation function $\Lambda$. Or, it can be a message call whose result is given by message call function $\Theta$.
+Whether $\Lambda$ or $\Theta$ is used depends on whether transaction is contract creation ($T_{\mathrm{t}} = \varnothing$) or message call. Along with giving $\boldsymbol{\sigma}_{\mathrm{P}}$ as output, these functions also output remaining gas after computation $g^{\prime}$, accrued state $A$ and status code $z$:
+
+$$
+(\boldsymbol{\sigma}_{\mathrm{P}}, g^{\prime}, A, z) \equiv \begin{cases}
+\Lambda_4(\boldsymbol{\sigma}_0, A^*, S(T), S(T), g, \\
+\ \ \ \ p, T_{\mathrm{v}}, T_{\mathbf{i}}, 0, \varnothing, \top) \ \ \ \ \ \ \ \  \ \ \ \ \ \text{if} \ T_{\mathrm{t}} = \varnothing \\
+\Theta_4(\boldsymbol{\sigma}_0, A^*, S(T), S(T), T_{\mathrm{t}}, \\
+\ \ \ \ T_{\mathrm{t}}, g, p, T_{\mathrm{v}}, T_{\mathrm{v}}, T_{\mathbf{d}}, 0, \top) \ \ \ \text{otherwise}
+\end{cases} \tag{76}
+$$
+
+The outputs of the $\Lambda$ and $\Theta$ are actually 5-element tuple instead of 4. We used $\Lambda_4$ and $\Theta_4$ here to denote that only 4 elements from the output are taken. The fifth element is actually represents message-call output bytes ($\mathbf{o}$, the returndata) which we have omitted here as it is not required in this context.
+
+_(**Note**: We will see more about functions $\Lambda$ and $\Theta$ in detail in next parts.)_
+
+$A^*$ is the accrued substate after reaching previous state $\boldsymbol{\sigma}_0$. It has same elements as empty substate $A^0$ i.e:
+
+$$
+A^* \equiv A^0 \tag{77}
+$$
+
+except accessed storage keys $A^*_{\mathbf{K}}$ and accessed account addresses $A^*_{\mathbf{a}}$ from previous state. $A^*_{\mathbf{K}}$ is set of all entries (each entry denoted by $E$) in transaction access list $T_{\mathbf{A}}$:
+
+$$
+A^*_{\mathbf{K}} \equiv \bigcup_{E \in T_{\mathbf{A}}} \{ \forall i < \lVert E_{\mathbf{s}} \rVert , i \in \mathbb{N} : (E_{\mathrm{a}}, E_{\mathbf{s}}[i]) \} \tag{78}
+$$
+
+and $A^*_{\mathbf{a}}$ contains accessed addresseses that include:
+
+- Accessed addresses in a zero substate i.e. $A^0_{\mathbf{a}}$. This is simply all precompiled contract addresses (denoted by $\pi$ in in $(63)$)
+- Transaction sender address $S(T)$
+- Beneficiary address of the block $H_{\mathrm{c}}$
+- All accesses addresses in transaction access list i.e. $\cup_{E \in T_{\mathbf{A}}} \{ E_{\mathrm{a}} \}$
+- If, it is not a contract creation ($T_{\mathrm{t}} \neq \varnothing$), the address where transactions executed at $T_{\mathrm{t}}$
+
+In set notation this is same as saying:
+
+$$
+A^*_{\mathbf{a}} \equiv \begin{cases}
+a \cup T_{\mathrm{t}} \ \ \text{if} \ T_{\mathrm{t}} \neq \varnothing \\
+a \ \ \ \text{otherwise} \tag{79}
+\end{cases}
+$$
+
+where,
+
+$$
+a \equiv A^0_{\mathbf{a}} \cup S(T) \cup H_c \cup_{E \in T_{\mathbf{A}}} \{ E_{\mathrm{a}} \} \tag{80}
+$$
+
+We've already defined remaining gas $g$ at state $\boldsymbol{\sigma}_0$ in $(81)$ above. Do not confuse $g$ with $g^{\prime}$, $g^{\prime}$ is the remaining gas after the computation or execution of transaction - at state $\boldsymbol{\sigma}_{\mathrm{P}}$.
+
+The state is finalized the amount of refunded gas $g^*$. This is sum of remaining gas $g^{\prime}$ plus some allowance:
+
+$$
+g^* \equiv g^{\prime} + \text{min} \{ \lVert \frac{T_{\mathrm{g}} - g^{\prime}}{5} \rVert, A_{\mathrm{r}} \} \tag{82}
+$$
+
+#### 3. $\boldsymbol{\sigma}_{\mathrm{P}} \boldsymbol{\rightarrow} \boldsymbol{\sigma}^*$
+
+In the pre-final state $\boldsymbol{\sigma}^*$ only two fields of the provisional state, $\boldsymbol{\sigma}_{\mathrm{P}}$ are updated. All other fields reamins same as $\boldsymbol{\sigma}_{\mathrm{P}}$, i.e:
+
+$$
+\boldsymbol{\sigma}^* \equiv \boldsymbol{\sigma}_{\mathrm{P}} \tag{83}
+$$
+
+except the account balance of sender is increased by refunded gas cost (remaining gas times the effective price):
+
+$$
+\boldsymbol{\sigma}^*[S(T)]_{\mathrm{b}} \equiv \boldsymbol{\sigma}_{\mathrm{P}}[S(T)]_{\mathrm{b}} + g^*p \tag{84}
+$$
+
+and account balance of beneficiary address (validator that includes that transaction in block) is increased w.r.t. priority fee $f$:
+
+$$
+\boldsymbol{\sigma}^*[B_{\mathrm{H}_{\mathrm{c}}}]_{\mathrm{b}} \equiv \boldsymbol{\sigma}_{\mathrm{P}}[B_{\mathrm{H}_{\mathrm{c}}}]_{\mathrm{b}} + (T_{\mathrm{g}} - g^*) f \tag{85}
+$$
+
+#### 4. $\boldsymbol{\sigma}^* \boldsymbol{\rightarrow} \boldsymbol{\sigma}^{\prime}$
+
+The final state $\boldsymbol{\sigma}^{\prime}$ does some final cleanups. It delets all accounts (contracts) that appear in self-destruct set, $A_{\mathbf{s}}$ or are touched and empty from pre-final state $\boldsymbol{\sigma}^{\prime}$.
+
+The final state $\boldsymbol{\sigma}^*$ is same as pre-final state $\boldsymbol{\sigma}^*$:
+
+$$
+\boldsymbol{\sigma}^{\prime} \equiv \boldsymbol{\sigma}^* \tag{86}
+$$
+
+except all accounts in pre-final state $\boldsymbol{\sigma}^*$ are deleted (set to null) that are in set $A_{\mathbf{s}}$:
+
+$$
+\forall i \in A_{\mathbf{s}} : \boldsymbol{\sigma}^{\prime}[i] = \varnothing \tag{87}
+$$
+
+and same with touched accounts:
+
+$$
+\forall i \in A_{\mathbf{t}} : \boldsymbol{\sigma}^{\prime}[i] = \varnothing \ \ \text{if} \ \mathtt{DEAD}(\boldsymbol{\sigma}^*, i) \tag{88}
+$$
+
+And, that concludes the process of execution of a transaction.
+
+#### Transaction Receipt
+
+Now that transaction has been executed the receipt of that transaction can be created. For that we define additional three parameters:
+
+- Total gas used in transaction, $\Upsilon^{\mathrm{g}}$ which is simply difference between provided gas limit and actual gas used:
+
+  $$
+  \Upsilon^{\mathrm{g}}(\boldsymbol{\sigma}, T) \equiv T_{\mathrm{g}} - g^* \tag{89}
+  $$
+
+- Logs (a.k.a events) that are created in this transaction execution. This is simply accumulated logs in substate:
+
+  $$
+  \Upsilon^{\mathbf{l}}(\boldsymbol{\sigma}, T) \equiv A_{\mathbf{l}} \tag{90}
+  $$
+
+- Status code of transaction, $z$. $z$ is 1 for successfully executed transactions and 0 for reverted transactions:
+  $$
+  \Upsilon^{\mathrm{z}}(\boldsymbol{\sigma}, T) \equiv z \tag{91}
+  $$
+
+And that concludes this part! Next up we see **Contract Creation**.

@@ -1,0 +1,267 @@
+---
+title: "Ethereum Yellow Paper Deciphered | Part 5: Contract Creation"
+publishedAt: "2023-01-10"
+summary: "This post is part of series of articles that try to decipher ethereum yellow paper, so that it makes sense to the reader and convey the meaning"
+math: true
+---
+
+_Note that this post is updated till the **Shanghai** version of the ethereum yellow paper._
+
+This part of the series dives into section 7 of the [Yellow Paper](https://ethereum.github.io/yellowpaper/paper.pdf) that describes the contract creation.
+
+## Contract Creation
+
+Remember from the previous part we mentioned the contract creation function $\Lambda$ that took a bunch of parameters to execute the contract creation transaction execution. $\Lambda$ takes a total of 11 input parameters:
+
+1. State before execution of (contract-creation) transaction, $\boldsymbol{\sigma}$.
+2. Accrued substate till before execution of transaction, $A$.
+3. Sender of the transaction denoted by $s$. This is `msg.sender` global variable in Solidity.
+4. Original transactor, the EOA which initiated the transaction, $o$. This is `tx.origin` global variable in Solidity.
+5. Available gas for the transaction execution, $g$.
+6. The effective gas price, $p$ that we saw in previous part.
+7. Endowment value, $v$ sent along with this contract creation transaction.
+8. The EVM initialization bytecode $\mathbf{i}$.
+9. Present depth of contract-creation stack, $e$.
+10. Salt for deriving new contract's address, $\zeta$. $\zeta$ was introduced with the **CREATE2** opcode in [EIP-1014](https://eips.ethereum.org/EIPS/eip-1014). If contract is created with older **CREATE** opcode, $\zeta$ is set to $0$ i.e. $\zeta \equiv \varnothing$.
+11. Permission to make modification to state, $w$.
+
+With above 11 input parameters, $\Lambda$ evaluates and outputs a tuple of 5 elements:
+
+1. Next world state after this contract creation transaction, $\boldsymbol{\sigma}^{\prime}$.
+2. Remaining gas after the execution, $g^{\prime}$.
+3. The accrued substate after this execution, $A^{\prime}$.
+4. The result status (success or fail) of the transaction execution, $z$.
+5. The output bytes data as result of the execution of the transaction, $\mathbf{o}$.
+
+$\Lambda$ can now be mathematically defined as:
+
+$$
+(\boldsymbol{\sigma}^{\prime}, g^{\prime}, A^{\prime}, z, \mathbf{o}) \equiv \Lambda(\boldsymbol{\sigma}, A, s, o, g, p, v, \mathbf{i}, e, \zeta, w) \tag{93}
+$$
+
+where,
+
+$$
+\zeta \in \mathbb{B}_{32} \cup \mathbb{B}_{0} \tag{92}
+$$
+
+### Contract Address
+
+The address of a newly created contract is determined by only a few parameters involved in contract creation. These parameters are RLP-encoded by $L_\mathrm{A}$ function and rightmost 20-bytes (160 bits) of the hash of this RLP-encoded structure is designated as address, $a$ of contract.
+
+The way $L_{\mathrm{A}}$ encodes the parameters depends on whether contract is created via `CREATE` ($\zeta = \varnothing$) or `CREATE2`.
+
+$$
+L_{\mathrm{A}}(s, n, \zeta, \mathbf{i}) \equiv \begin{cases}
+\mathtt{RLP}((s, n)) \ \ \ \ \ \ \text{if} \ \zeta = \varnothing \\
+(255) \cdot s \cdot \zeta \cdot \mathtt{KEC}(\mathbf{i}) \ \ \ \text{otherwise}
+\end{cases} \tag{96}
+$$
+
+where $\cdot$ is simply concatenation operator that concatenates the provided bytes data and $n$ is the nonce of sender account.
+
+The output of $L_{\mathrm{A}}$ is then hashed with keccak-256 and last 20-bytes are sliced. This is done by the $\mathtt{ADDR}$ function.
+
+$$
+\mathtt{ADDR}(s, n, \zeta, \mathbf{i}) \equiv \mathcal{B}_{96..255}( \mathtt{KEC}( L_{\mathrm{A}}(s, n, \zeta, \mathbf{i}) ) ) \tag{95}
+$$
+
+$\mathcal{B}_{96..255}$ function simply slices off the last 20-bytes of 32-bytes result of $\mathtt{KEC}$ hash function.
+
+Now, we can formally define the address $a$ of newly-created contract as:
+
+$$
+a \equiv \mathtt{ADDR}(s, \boldsymbol{\sigma}[s]_{\mathrm{n}} - 1, \zeta, \mathbf{i}) \tag{94}
+$$
+
+You might've noticed that we have given nonce (of sender account) parameter decreased by 1 ($\boldsymbol{\sigma}[s]_{\mathrm{n}} - 1$) instead of simply as $\boldsymbol{\sigma}[s]_{\mathrm{n}}$. Remember from previous part, Transaction Execution, at equivalence $(75)$ that we had already increased the nonce by 1, updating the state $\boldsymbol{\sigma}$ before proceeding for contract creation or message call execution. But $\mathtt{ADDR}$ expects the sender nonce at the latest finalized world state, which at the time of execution step is actually $\boldsymbol{\sigma}[s]_{\mathrm{n}} - 1$.
+
+After this, the address of the new contract is added to set of accessed accounts in substate:
+
+$$
+A^* \equiv A \ \ \text{except} \ \ A^*_{\mathbf{a}} \equiv A^*_{\mathbf{a}} \cup \{a\} \tag{97}
+$$
+
+### State Transition
+
+The state transition in contract creation transaction happens step by step. We describe these steps below:
+
+##### Step 1: Account Initialization
+
+First step involves initialization of the new contract (account) at address $a$. Changes in world state at $\boldsymbol{\sigma}$ transitions it to $\boldsymbol{\sigma}^*$.
+
+At this point, only account states of $a$ and $s$ (sender address) in the world state $\boldsymbol{\sigma}$ are modified. All else remains same, i.e.:
+
+$$
+\boldsymbol{\sigma}^* \equiv \boldsymbol{\sigma} \ \ \text{except} \tag{98}
+$$
+
+except, contract's state parameters are initialized as:
+
+- Nonce is set to 1.
+- Balance is set to sum of value (endowment) passed $v$ plus pre-existing value $v^{\prime}$ if contract at $a$ already exists.
+- Storage set to empty, $\mathtt{TRIE}(\varnothing)$.
+- Code hash set to hash of empty string, $\mathtt{KEC}(())$.
+
+$$
+\boldsymbol{\sigma}^*[a] = ( 1, v + v^{\prime}, \mathtt{TRIE}(\varnothing), \mathtt{KEC}(()) ) \tag{99}
+$$
+
+If you're wondering why code hash is empty - its because its just account initialization phase, we have not ran the EVM initialization code $\mathbf{i}$ yet. That is done in next step.
+
+##### Step 2: Init Code Execution
+
+In this step we execute the initialization code passed, $\mathbf{i}$ with EVM. This initialization can state parameters like it can set its storage and the body code of the contract, transitioning state from $\boldsymbol{\sigma}^*$ to $\boldsymbol{\sigma}^{**}$.
+
+This state transition happens via the code execution function $\Xi$.
+
+$$
+(\boldsymbol{\sigma}^{**}, g^{**}, A^{**}, \mathbf{o}) \equiv \Xi(\boldsymbol{\sigma}^{*}, g, A^*, I) \tag{103}
+$$
+
+$I$ is simply the parameters of execution:
+
+$$
+I_{\mathrm{a}} \equiv a \tag{104}
+$$
+
+$$
+I_{\mathrm{o}} \equiv o \tag{105}
+$$
+
+$$
+I_{\mathrm{p}} \equiv p \tag{106}
+$$
+
+$$
+I_{\mathbf{d}} \equiv () \tag{107}
+$$
+
+$$
+I_{\mathrm{s}} \equiv s \tag{108}
+$$
+
+$$
+I_{\mathrm{v}} \equiv v \tag{109}
+$$
+
+$$
+I_{\mathbf{i}} \equiv \mathbf{i} \tag{110}
+$$
+
+$$
+I_{\mathrm{e}} \equiv e \tag{111}
+$$
+
+$$
+I_{\mathrm{w}} \equiv w \tag{112}
+$$
+
+After this initialization code execution, a code-deposit cost, $c$ is paid. $c$ is proportional to the created contract's code.
+
+$$
+c \equiv G_{\text{codedeposit}} \times \lVert \mathbf{o} \rVert \tag{113}
+$$
+
+If the remaining gas after the code execution (using $\Xi$) $g^{**}$ is not enough i.e. $g^{**} < c$ - an out-of-gas exception occurs.
+
+If it was successful a new resultant state is reached - $(\boldsymbol{\sigma}, g^{\prime}, A^{\prime}, z)$.
+
+where $g^{\prime}$ is the gas left.
+
+$$
+g^{\prime} \equiv \begin{cases}
+0 \ \ \ \text{if} \ \ F \\
+g^{**} - c \ \ \ \text{otherwise}
+\end{cases} \tag{114}
+$$
+
+$F$ indicates any condition that led to failure of contract creation. $F$ is true (creation failed) if:
+
+- If account at address $a$ did not have empty state - it must have code hash as hash of empty string or nonce set to 0:
+
+  $$
+  F \equiv (\boldsymbol{\sigma}[a] \ne \varnothing \land (\boldsymbol{\sigma}[a]_{\mathrm{c}} \ne \mathtt{KEC}(()) \lor \boldsymbol{\sigma}[a]_{\mathrm{n}} \ne 0 )) \ \ \lor \ ...
+  $$
+
+- State at previous phase was empty and output code was empty:
+  $$
+  F \equiv (\boldsymbol{\sigma}^{**} = \varnothing \land \mathbf{o} = \varnothing) \ \ \lor \ ...
+  $$
+- Remaining gas was less than code-deposit gas required:
+  $$
+  F \equiv g^{**} < c \ \ \lor \ ...
+  $$
+- Output bytesize was greater than fixed limit of 24576 bytes:
+  $$
+  F \equiv \lVert \mathbf{o} \rVert > 24576 \ \ \lor \ ...
+  $$
+- Code began with $\mathtt{0xef}$ (see [EIP-3541](https://eips.ethereum.org/EIPS/eip-3541)):
+  $$
+  F \equiv \mathbf{o}[0] = \mathtt{0xef} \ \ \lor \ ...
+  $$
+
+Combining all conditions above we get:
+
+$$
+\displaylines{
+F \equiv (\boldsymbol{\sigma}[a] \ne \varnothing \land (\boldsymbol{\sigma}[a]_{\mathrm{c}} \ne \mathtt{KEC}(()) \lor \boldsymbol{\sigma}[a]_{\mathrm{n}} \ne 0 )) \ \ \lor \\
+(\boldsymbol{\sigma}^{**} = \varnothing \land \mathbf{o} = \varnothing) \ \ \lor \\
+g^{**} < c \ \ \lor \\
+\lVert \mathbf{o} \rVert > 24576 \ \ \lor \\
+\mathbf{o}[0] = \mathtt{0xef} \tag{118}
+}
+$$
+
+#### Defining final state, $\boldsymbol{\sigma}^{\prime}$
+
+Now, lets define final state $\boldsymbol{\sigma}^{\prime}$. The value of $\boldsymbol{\sigma}^{\prime}$ depends on a few conditions:
+
+- It remains unchanged in case failure condition was met or state output from $\Xi$ i.e. $\boldsymbol{\sigma}^{**}$ was empty e.g. due to out-of-gas exception:
+
+  $$
+  \boldsymbol{\sigma}^{\prime} \equiv \boldsymbol{\sigma} \ \ \text{if} \ F \lor \boldsymbol{\sigma}^{**} = \varnothing
+  $$
+
+- If state of $a$ in $\boldsymbol{\sigma}^{**}$ is dead, it becomes same as $\Xi$ output i.e. $\boldsymbol{\sigma}^{**}$ except account state at contract's address, $a$ remains empty:
+
+  $$
+   \boldsymbol{\sigma}^{\prime} \equiv  \boldsymbol{\sigma}^{**} \ \text{except:} \ \boldsymbol{\sigma}^{\prime}[a] = \varnothing \ \ \text{if} \ \ \mathtt{DEAD}(\boldsymbol{\sigma}^{**}, a)
+  $$
+
+- Otherwise, it becomes same as $\Xi$ output i.e. $\boldsymbol{\sigma}^{**}$ except code hash in account state at $a$ is set to keccak hash of created contract:
+  $$
+   \boldsymbol{\sigma}^{\prime} \equiv  \boldsymbol{\sigma}^{**} \ \text{except:} \ \boldsymbol{\sigma}^{\prime}[a]_{\mathrm{c}} = \mathtt{KEC}(\mathbf{o}) \ \ \text{otherwise}
+  $$
+
+Combining all of the above we get:
+
+$$
+\boldsymbol{\sigma}^{\prime} \equiv \begin{cases}
+\boldsymbol{\sigma} \ \ \ \ \ \text{if} \ F \lor \boldsymbol{\sigma}^{**} = \varnothing \\
+\boldsymbol{\sigma}^{**} \ \ \text{except:} \\
+\boldsymbol{\sigma}^{\prime}[a] = \varnothing \ \ \ \text{if} \ \mathtt{DEAD}(\boldsymbol{\sigma}^{**}, a) \\
+\boldsymbol{\sigma}^{**} \ \ \text{except:} \\
+\boldsymbol{\sigma}^{\prime}[a]_{\mathrm{c}} = \mathtt{KEC}(\mathbf{o}) \ \ \text{otherwise}
+\end{cases} \tag{115}
+$$
+
+Similarly, the transaction substate also reverts to $A^{*}$ in case of failure or set to $A^{**}$ if successful:
+
+$$
+A^{\prime} \equiv \begin{cases}
+A^{*} \ \ \ \text{if} \ F \lor \boldsymbol{\sigma}^{**} = \varnothing \\
+A^{**} \ \ \ \text{otherwise}
+\end{cases} \tag{116}
+$$
+
+$z$ indicates failure ($0$) or success ($1$) accordingly:
+
+$$
+z \equiv \begin{cases}
+0 \ \ \text{if} \ F \lor \boldsymbol{\sigma}^{**} = \varnothing \\
+1 \ \ \text{otherwise}
+\end{cases} \tag{117}
+$$
+
+That's all! Next up we see **Message Call**.

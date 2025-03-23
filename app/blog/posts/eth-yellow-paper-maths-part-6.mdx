@@ -1,0 +1,251 @@
+---
+title: "Ethereum Yellow Paper Deciphered | Part 6: Message Call"
+publishedAt: "2023-02-12"
+summary: "This post is part of series of articles that try to decipher ethereum yellow paper, so that it makes sense to the reader and convey the meaning"
+math: true
+---
+
+_Note that this post is updated till the **Shanghai** version of the ethereum yellow paper._
+
+## Message Call
+
+In the last part, we saw how contract creation transactions work. In this part we introduce message call transactions. Like contract creations, message calls also involve many parameters:
+
+1. State before execution of (contract-creation) transaction, $\boldsymbol{\sigma}$.
+2. Accrued substate till before execution of transaction, $A$.
+3. Sender of the transaction denoted by $s$. This is `msg.sender` global variable in Solidity.
+4. Original transactor, the EOA which initiated the transaction, $o$. This is `tx.origin` global variable in Solidity.
+5. The address of recipient of the message call, $r$. This is contract being called.
+6. The account/contract whose code is to be executed, $c$. Most of the time this is same as $r$, but can be different in `delegatecall`s.
+7. Available gas for the transaction execution, $g$.
+8. Value, $v$ sent along with this message call transaction. It is `msg.value` in Solidity.
+9. The effective gas price, $p$ that we saw in previous part.
+10. The input bytes data of the call, $\mathbf{d}$. Also known ass \***\*calldata\*\*** in Solidity.
+11. Present depth of contract-creation stack, $e$.
+12. Permission to make modification to state, $w$.
+
+With above 12 input parameters, $\Theta$ evaluates and outputs a tuple of 5 elements:
+
+1. Next world state after this contract creation transaction, $\boldsymbol{\sigma}^{\prime}$.
+2. Remaining gas after the execution, $g^{\prime}$.
+3. The accrued substate after this execution, $A^{\prime}$.
+4. The result status (success or fail) of the transaction execution, $z$.
+5. The output bytes data as result of the execution of the transaction, $\mathbf{o}$.
+
+$\Theta$ can now be mathematically defined as:
+
+$$
+(\boldsymbol{\sigma}^{\prime}, g^{\prime}, A^{\prime}, z, \mathbf{o}) \equiv \Theta(\boldsymbol{\sigma}, A, s, o, r, c, g, p, v, v^{\sim}, \mathbf{d}, e, w) \tag{119}
+$$
+
+#### Special case of `DELEGATECALL` opcode
+
+Note that for `delegatecall` the sender of transaction $s$ and originator $o$ of the transaction can be different addresses, as we already seen above. `o` is always an EOA - it cannot be a contract.
+
+Another point of difference is the `msg.value` global parameter in the call context. Normally, for non-`delegatecall` calls we denote it with $v$ which is simply the `msg.value`. But for `delegatecall` we do not specify any `value` parameter to send with the call. In this case, the called function has the (apparent) `msg.value` same as the calling context/function.
+
+Let's define an updated state $\boldsymbol{\sigma}_1$ corresponding to the original state $\boldsymbol{\sigma}$ as the state with values transferred from sender to receiver. So the contract receiving the call ($r$) has balance increased by $v$ and sender has its balance decreased by $v$:
+
+$$
+\boldsymbol{\sigma}_1[r]_{\mathrm{b}} \equiv \boldsymbol{\sigma}[r]_{\mathrm{b}} + v \ \land \ \boldsymbol{\sigma}_1[s]_{\mathrm{b}} \equiv \boldsymbol{\sigma}[s]_{\mathrm{b}} - v \tag{120}
+$$
+
+Note that the in the transitional state $\boldsymbol{\sigma}_1$ the entry at contract address $r$ i.e. $\boldsymbol{\sigma}_1[r]$ is not defined initially.
+
+The equation $(120)$ above can be expanded to more detailed form:
+
+- When contract/account is non-existent in state $\boldsymbol{\sigma}$ and value sent is non-zero:
+
+  $$
+  \boldsymbol{\sigma}_1^{\prime}[r] \equiv (0, v, \mathtt{TRIE}(\varnothing), \mathtt{KEC}(())) \ \ \text{if} \ \boldsymbol{\sigma}[r] = \varnothing \land v \ne 0
+  $$
+
+- When contract/account is non-existent in state $\boldsymbol{\sigma}$ and value sent is zero:
+
+  $$
+  \boldsymbol{\sigma}_1^{\prime}[r] \equiv \varnothing \ \ \text{if} \ \boldsymbol{\sigma}[r] = \varnothing \land v = 0
+  $$
+
+- When contract/account is exists in state $\boldsymbol{\sigma}$:
+  $$
+  \boldsymbol{\sigma}_1^{\prime}[r] \equiv (\boldsymbol{\sigma}[r]_{\mathrm{n}}, \boldsymbol{\sigma}[r]_{\mathrm{b}} + v, \boldsymbol{\sigma}[r]_{\mathbf{s}}, \boldsymbol{\sigma}[r]_{\mathrm{c}}) \ \ \text{otherwise}
+  $$
+
+Combining all of the above it is same as saying that all else unchanged i.e.
+
+$$
+\boldsymbol{\sigma}_1^{\prime} \equiv \boldsymbol{\sigma}
+$$
+
+The contract address entry is updated as:
+
+$$
+\begin{cases}
+\boldsymbol{\sigma}_1^{\prime}[r] \equiv (0, v, \mathtt{TRIE}(\varnothing), \mathtt{KEC}(())) \ \ \text{if} \ \boldsymbol{\sigma}[r] = \varnothing \land v \ne 0 \\
+\boldsymbol{\sigma}_1^{\prime}[r] \equiv \varnothing \ \ \text{if} \ \boldsymbol{\sigma}[r] = \varnothing \land v = 0 \\
+\boldsymbol{\sigma}_1^{\prime}[r] \equiv \mathbf{a}_1^{\prime} \ \ \text{otherwise}
+\end{cases} \tag{125}
+$$
+
+where,
+
+$$
+\mathbf{a}_1^{\prime} \equiv (\boldsymbol{\sigma}[r]_{\mathrm{n}}, \boldsymbol{\sigma}[r]_{\mathrm{b}} + v, \boldsymbol{\sigma}[r]_{\mathbf{s}}, \boldsymbol{\sigma}[r]_{\mathrm{c}}) \tag{126}
+$$
+
+Next the entry for sender address $s$ in state is updated as:
+
+- When sender address is non existent in $\boldsymbol{\sigma}$ and value sent is zero:
+
+  $$
+  \boldsymbol{\sigma}_1[s] \equiv \varnothing \ \ \text{if} \ \ \boldsymbol{\sigma}_1^{\prime}[s] = \varnothing \land v = 0
+  $$
+
+- Otherwise:
+  $$
+  \boldsymbol{\sigma}_1[s] \equiv (\boldsymbol{\sigma}[s]_{\mathrm{n}}, \boldsymbol{\sigma}[s]_{\mathrm{b}} - v, \boldsymbol{\sigma}[s]_{\mathbf{s}}, \boldsymbol{\sigma}[s]_{\mathrm{c}}) \ \ \text{otherwise}
+  $$
+
+Combining we get:
+
+$$
+\boldsymbol{\sigma}_1[s] \equiv \begin{cases}
+\varnothing \ \ \text{if} \ \ \boldsymbol{\sigma}_1^{\prime}[s] = \varnothing \land v = 0 \\
+\mathbf{a}_1 \text{otherwise}
+\end{cases}
+$$
+
+where,
+
+$$
+\mathbf{a}_1 \equiv (\boldsymbol{\sigma}[s]_{\mathrm{n}}, \boldsymbol{\sigma}[s]_{\mathrm{b}} - v, \boldsymbol{\sigma}[s]_{\mathbf{s}}, \boldsymbol{\sigma}[s]_{\mathrm{c}})
+$$
+
+Now we formally defined the outputs of the $\Theta$ from $(119)$ function.
+
+Remember from previous part that $\Xi$ is the EVM code execution function. If $\Xi$ executes successfully, the state is transitioned to next state $\boldsymbol{\sigma}^{\prime}$. Otherwise, all changes are reverted and state remains unchanged i.e it remains $\boldsymbol{\sigma}$.
+
+Lets define the $\Xi$ function more accurately here. $\Xi$ executes the instructions according to a pre-specified execution model of the EVM. Apart from this some addresses are special - called precompiled addresses. Directing a call to these addresses executes special codes at these precompiled addresses. For example, you can use SHA-256 algorithm by calling at address $\mathtt{0x02}$ ($2$ in decimal) with appropriate calldata input. The corresponding execution function is denoted as $\Xi_{\mathtt{SHA256}}$.
+The calls directed to these pre-compiled addresses ($\mathtt{0x01}$ to $\mathtt{0x09}$) executes a fixed code in the EVM. Any other address will try to load contract code at that address and execute that against the provided input/calldata. We defined the EVM execution function $\Xi$ as:
+
+$$
+\Xi \equiv \begin{cases}
+\Xi_{\mathtt{ECREC}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 1 \\
+\Xi_{\mathtt{SHA256}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 2 \\
+\Xi_{\mathtt{RIP160}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 3 \\
+\Xi_{\mathtt{ID}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 4 \\
+\Xi_{\mathtt{EXPMOD}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 5 \\
+\Xi_{\mathtt{BN\_ADD}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 6 \\
+\Xi_{\mathtt{BN\_MUL}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 7 \\
+\Xi_{\mathtt{SNARKV}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 8 \\
+\Xi_{\mathtt{BLAKE2\_F}}(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{if} \ \ c = 9 \\
+\Xi(\boldsymbol{\sigma}_1, g, A, I) \ \ \ \text{otherwise}
+\end{cases} \tag{140}
+$$
+
+The set precompiled contracts are are also denoted by $\pi$:
+
+$$
+\pi \equiv \{1, 2, 3, 4, 5, 6, 7, 8, 9\} \tag{142}
+$$
+
+$I$ in the above is execution environment parameters. These are:
+
+1. Contract address (recipient):
+
+   $$
+   I_{\mathrm{a}} \equiv r \tag{132}
+   $$
+
+2. Originator address of the message call:
+
+   $$
+   I_{\mathrm{o}} \equiv o \tag{133}
+   $$
+
+3. Effective gas price:
+
+   $$
+   I_{\mathrm{p}} \equiv p \tag{134}
+   $$
+
+4. The input data or calldata:
+
+   $$
+   I_{\mathbf{d}} \equiv \mathbf{d} \tag{135}
+   $$
+
+5. Sender of the message call:
+
+   $$
+   I_{\mathrm{s}} \equiv s \tag{136}
+   $$
+
+6. The value sent with the message call:
+
+   $$
+   I_{\mathrm{v}} \equiv v^{\sim} \tag{137}
+   $$
+
+7. Message call stack:
+
+   $$
+   I_{\mathrm{e}} \equiv e \tag{138}
+   $$
+
+8. Permission to make state modification:
+   $$
+   I_{\mathrm{w}} \equiv w \tag{139}
+   $$
+
+Lets define the output of the function defined with $\Xi$ as:
+
+$$
+(\boldsymbol{\sigma}^{**}, g^{**}, A^{**}, \mathbf{o}) \equiv \Xi \tag{131}
+$$
+
+Now we ascertain the final state after execution of the message call, which is the tuple $(\boldsymbol{\sigma}^{\prime}, g^{\prime}, A^{\prime}, \mathbf{o})$.
+
+#### The final state, $\boldsymbol{\sigma}^{\prime}$
+
+Note that execution defined by $\Xi$ can be halted/reverted. In that case, the output state $\boldsymbol{\sigma}^{**}$ is empty and final state becomes same as initial state. Otherwise final state is $\boldsymbol{\sigma}^{**}$:
+
+$$
+\boldsymbol{\sigma}^{\prime} \equiv \begin{cases}
+\boldsymbol{\sigma} \ \ \text{if} \ \ \boldsymbol{\sigma}^{**} = \varnothing \\
+\boldsymbol{\sigma}^{**} \ \ \text{otherwise}
+\end{cases} \tag{127}
+$$
+
+#### Remaining gas, $g^{\prime}$
+
+In case of call revert during execution, all gas is consumed and no remaining gas is left. Otherwise it is $g^{**}$:
+
+$$
+g^{\prime} \equiv \begin{cases}
+0 \ \ \text{if} \ \ \boldsymbol{\sigma}^{**} = \varnothing \land \mathbf{o} = \varnothing \\
+g^{**} \ \ \text{otherwise}
+\end{cases} \tag{128}
+$$
+
+#### Accrued substate, $A^{**}$
+
+In case of call revert accrued substate remains same as before invoking the $\Theta$. Otherwise, $A^{**}$:
+
+$$
+A^{\prime} \equiv \begin{cases}
+A \ \ \text{if} \ \ \boldsymbol{\sigma}^{**} = \varnothing \\
+A^{**} \ \ \text{otherwise}
+\end{cases}
+$$
+
+#### Status code, $z$
+
+Status is simply 0 for reverted calls and 1 for successful ones:
+
+$$
+z \equiv \begin{cases}
+0 \ \ \text{if} \ \ \boldsymbol{\sigma}^{**} = \varnothing \\
+1 \ \ \text{otherwise}
+\end{cases}
+$$

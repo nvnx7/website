@@ -1,0 +1,363 @@
+---
+title: "Ethereum Yellow Paper Deciphered | Part 7: Execution Model"
+publishedAt: "2023-04-01"
+summary: "This post is part of series of articles that try to decipher ethereum yellow paper, so that it makes sense to the reader and convey the meaning"
+math: true
+---
+
+_Note that this post is updated till the **Shanghai** version of the ethereum yellow paper._
+
+## Execution Model
+
+The execution model specified how to executed a bytecode in given message call or contract creation transaction. The EVM (Ethereum Virtual Machine) is designed with this model. You can read more about EVM [here](https://www.evm.codes/about).
+
+As we have seen in previous parts, this execution model is defined by the $\Xi$ function. $\Xi$ computes the resultant state after code execution, along with other information.
+
+$$
+(\boldsymbol{\sigma}^{\prime}, g^{\prime}, A^{\prime}, \mathbf{o}) \equiv \Xi(\boldsymbol{\sigma}, g, A, I) \tag{143}
+$$
+
+### Execution Overview
+
+Now we will formally defined the $\Xi$ function finally. Roughly, $\Xi$ executes instructions denoted by 1-byte values called [**opcodes**](https://www.evm.codes/). It does so iteratively, progressing a pair of states - first the world state $\boldsymbol{\sigma}$ that we have already talked a lot about. And second is the machine state $\boldsymbol{\mu}$.
+
+#### Machine State
+
+The machine state, $\boldsymbol{\mu}$ is a tuple comprising of 6 elements:
+
+1. Gas available, $g$
+2. Program counter, $pc$. A pointer to position in bytecode pointing the opcode to execute next.
+3. Memory contents, $\mathbf{m}$. By default it is assumed to be a series of zero bytes of size $2^{256}$ bits.
+4. Active number of words in memory, $i$
+5. Stack contents, $\mathbf{s}$
+6. The returndata buffer $\mathbf{o}$
+
+We denote $w$ as current operation (opcode) to be executed, then it is equal to $I_{\mathbf{b}}[\boldsymbol{\mu}_{\text{pc}}]$.
+
+$$
+w \equiv \begin{cases}
+I_{\mathbf{b}}[\boldsymbol{\mu}_{\text{pc}}] \ \ \text{if} \ \ \boldsymbol{\mu}_{\text{pc}} < \lVert I_{\boldsymbol{b}} \rVert \\
+\text{STOP} \ \ \ \text{otherwise}
+\end{cases} \tag{157}
+$$
+
+Note that instruction mnemonic written above as $\text{STOP}$ represents actual opcode number and should be interpreted as such. So, $\text{STOP}$ should be interpreted as hex value $\mathtt{0x00}$ since it represents [$\text{STOP}$ operation](https://www.evm.codes/?fork=cancun#00) in the bytecode. Similarly opcodes like $\text{ADD}$, $\text{MUL}$, $\text{AND}$, $\text{OR}$ etc. are mnemonic for values - $\mathtt{0x01}$, $\mathtt{0x02}$, $\mathtt{0x16}$, $\mathtt{0x17}$ respectively.
+
+Also we use $\delta$ to denote the number inputs taken by an opcode. This is also stack items removed by the opcode from the current stack. Similarly, $\alpha$ represents the number output items by an opcode or the number of items added to the stack. We subscript $\delta$ and $\alpha$ to show which opcode we are talking about.
+
+So, for example, for the $\text{ADD}$ opcode, $\delta_{\text{ADD}}$ = 2. Since $\text{ADD}$ takes two stack items to do addition on them. And $\alpha_{\text{ADD}}$ = 1, the number of output items which only one - the sum.
+
+#### Execution
+
+The progression of the states $\boldsymbol{\sigma}$ and $\boldsymbol{\mu}$ is defined in terms of the function $X$. The function $X$ recursively executes the opcodes/instructions until the machine halts either by an exception or normally. A single iteration of the recursion is defined by the function $O$ that outputs result of a single cycle of the machine.
+
+We go through some important functions one by one:
+
+#### Exceptional Halting function $Z$
+
+$Z$ is used to denote a function which outputs a boolean representing if the present state is an exceptional halting state of machine. The output of $Z(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)$ is **true** i.e. it is exceptional halt if any of the following conditions is true:
+
+- If there is not enough gas left to execute next opcode:
+
+  $$
+  \boldsymbol{\mu}_g < C(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)
+  $$
+
+- If the opcode at current pointer is invalid:
+
+  $$
+  \delta_w = \varnothing
+  $$
+
+- If there is insufficient number of input stack items than required by the opcode:
+
+  $$
+  \lVert \boldsymbol{\mu}_{\mathbf{s}} \rVert < \delta_w
+  $$
+
+- If the instruction is `JUMP` but input (topmost element in stack) does not represent a valid destination to jump to i.e. destination is not [`JUMPDEST`](https://www.evm.codes/?fork=cancun#5b) opcode:
+  $$
+  (w = \text{JUMP} \land \boldsymbol{\mu}_{\mathbf{s}}[0] \notin D(I_{\mathbf{b}}))
+  $$
+
+The function $D$ determines validity of the jumped destination. We'll expand on it next.
+
+- If the instruction is `JUMPI` (conditional jump), and condition input in stack is true (not 0) but destination input does not a valid destination to jump to:
+
+  $$
+  (w = \text{JUMPI} \land \boldsymbol{\mu}_{\mathbf{s}}[1] \ne 0 \land \boldsymbol{\mu}_{\mathbf{s}}[0] \notin D(I_{\mathbf{b}}))
+  $$
+
+- If the instruction is `RETURNDATACOPY` but
+
+  $$
+  w = \text{RETURNDATACOPY} \land \boldsymbol{\mu}_{\mathbf{s}}[1] + \boldsymbol{\mu}_{\mathbf{s}}[2] > \lVert \boldsymbol{\mu}_{\mathbf{o}} \rVert
+  $$
+
+- If executing the current instruction/opcode would result in stack size exceeding 1024 (stack overflow). Note that executing an opcode $w$ pops $\delta_w$ items from stack and pushes $\alpha_w$ items into it:
+
+  $$
+  \lVert \boldsymbol{\mu}_{\mathbf{s}} \rVert - \delta_w + \alpha_w > 1024
+  $$
+
+- State modification is attempted during a `STATICCALL` which does not have permission to make state modification:
+  $$
+  \neg I_\mathrm{w} \land W(w, \boldsymbol{\mu})
+  $$
+
+The function $W$ above defines condition for all state modification scenarios that includes: - $w$ is any of $\text{CREATE}$, $\text{CREATE2}$, $\text{SSTORE}$ or $\text{SELFDESTRUCT}$ opcodes:
+
+$$
+    w \in \{\text{CREATE}, \text{CREATE2}, \text{SSTORE}, \text{SELFDESTRUCT}\}
+$$
+
+    - $w$ is any of the event logging opcodes:
+    $$
+    \text{LOG0} \le w \land w \le \text{LOG4}
+    $$
+
+    - $w$ is $\text{CALL}$ opcode but the input at 2nd index is non-zero:
+    $$
+    w = \text{CALL} \land \mathbf{\mu}_{\mathbf{s}}[2] \ne 0
+    $$
+
+    Combining all above:
+    $$
+    \displaylines{
+    W(w, \mathbf{\mu}) \equiv w \in \{\text{CREATE}, \text{CREATE2}, \text{SSTORE}, \text{SELFDESTRUCT}\} \ \ \lor \\
+    \text{LOG0} \le w \land w \le \text{LOG4} \ \ \lor \\
+    w = \text{CALL} \land \mathbf{\mu}_{\mathbf{s}}[2] \ne 0
+    } \tag{159}
+    $$
+
+- Gas left before executing $\text{SSTORE}$ opcode is less than $G_{\text{callstipend}}$ (see [EIP-2200](https://eips.ethereum.org/EIPS/eip-2200)):
+  $$
+  w = \text{SSTORE} \land \boldsymbol{\mu}_g \le G_{\text{callstipend}}
+  $$
+
+Combining all of the conditions describes above we can now mathematically defined $Z$ as:
+
+$$
+\displaylines{
+Z(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I) \equiv \boldsymbol{\mu}_g < C(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I) \ \ \lor \\
+\delta_w = \varnothing \ \ \lor \\
+\lVert \boldsymbol{\mu}_{\mathbf{s}} \rVert < \delta_w \ \ \lor \\
+(w = \text{JUMP} \land \boldsymbol{\mu}_{\mathbf{s}}[0] \notin D(I_{\mathbf{b}})) \ \ \lor
+(w = \text{JUMPI} \land \boldsymbol{\mu}_{\mathbf{s}}[1] \ne 0 \land \boldsymbol{\mu}_{\mathbf{s}}[0] \notin D(I_{\mathbf{b}})) \ \ \lor \\
+(w = \text{RETURNDATACOPY} \land \boldsymbol{\mu}_{\mathbf{s}}[1] + \boldsymbol{\mu}_{\mathbf{s}}[2] > \lVert \boldsymbol{\mu}_{\mathbf{o}} \rVert) \ \ \lor \\
+\lVert \boldsymbol{\mu}_{\mathbf{s}} \rVert - \delta_w + \alpha_w > 1024 \ \ \lor \\
+( \neg I_\mathrm{w} \land W(w, \boldsymbol{\mu})) \ \ \lor \\
+(w = \text{SSTORE} \land \boldsymbol{\mu}_g \le G_{\text{callstipend}})
+} \tag{158}
+$$
+
+#### Normal Halting Function $H$
+
+$$
+H(\boldsymbol{\mu}, I) \equiv \begin{cases}
+H_{\text{RETURN}}(\boldsymbol{\mu}) \ \ \text{if} \ \ \ w \in \{ \text{RETURN, REVERT} \} \\
+() \ \ \ \text{if} \ \ w \in \{\text{STOP}, \text{SELFDESTRUCT}\} \\
+\varnothing \ \ \text{otherwise}
+\end{cases} \tag{163}
+$$
+
+##### Jump Destination Validity
+
+We previously use a function $D$ to define a set of all valid jump destinations where the execution can be jumped to via the `JUMP` or `JUMPI` opcodes. The set of valid jump destination simply is all of the positions in the bytecode of the contract where there is `JUMPDEST` ($\texttt{0x5b}$) opcode. To write roughly in set notation it would be:
+
+$$
+D(\mathbf{c}) \equiv \{ i : \forall i, \mathbf{c}[i] = \text{JUMPDEST} \}
+$$
+
+The paper defines it a bit differently by using another function $D_{\text{J}}$. Given bytecode $\mathbf{c}$ and index $i$ for opcode in that code, $D_{\text{J}}$ outputs the set of all valid jump destinations in the code starting from index $i$. So, by definition we can say:
+
+$$
+D(\mathbf{c}) \equiv D_{\text{J}}(\mathbf{c}, 0) \tag{160}
+$$
+
+since $D(\mathbf{c})$ is set of all valid jump destinations in the code.
+
+The function $D_{\text{J}}$ is defined recursively covering three cases as:
+
+- If the index $i$ of opcodes in code becomes greater than length of code, $\lVert \mathbf{c} \rVert$ it is empty set:
+
+  $$
+  D_{\text{J}} \equiv \{\} \ \ \ \text{if} \ i \ge \lVert \mathbf{c} \rVert
+  $$
+
+- If the opcode at $i$ is $\text{JUMPDEST}$ itself, the set includes $i$ and all other valid jump destination positions after $i$:
+
+  $$
+  D_{\text{J}} \equiv \{i\} \cup D_{\text{J}}(\mathbf{c}, N(i, \mathbf{c}[i])) \ \ \ \text{if} \ \mathbf{c}[i] = \text{JUMPDEST} \\
+  $$
+
+  where function $N$ defines the next valid opcode position (it is not always simply $i + 1$, see below).
+
+- Otherwise it is only set of all other valid jump destination positions after $i$:
+  $$
+  D_{\text{J}} \equiv D_{\text{J}}(\mathbf{c}, N(i, \mathbf{c}[i])) \ \ \text{otherwise}
+  $$
+
+Combining all above we get:
+
+$$
+D_{\text{J}}(\mathbf{c}, i) \equiv \begin{cases}
+\{\} \ \ \ \text{if} \ i \ge \lVert \mathbf{c} \rVert \\
+\{i\} \cup D_{\text{J}}(\mathbf{c}, N(i, \mathbf{c}[i])) \ \ \ \text{if} \ \ \mathbf{c}[i] = \text{JUMPDEST} \\
+D_{\text{J}}(\mathbf{c}, N(i, \mathbf{c}[i])) \ \ \text{otherwise}
+\end{cases} \tag{161}
+$$
+
+We used function $N$ above for the next valid opcode index in the code.
+
+$$
+N(i, w) \equiv \begin{cases}
+i + w - \text{PUSH1} + 2 \ \ \text{if} \ w \in [\text{PUSH1}, \text{PUSH32}] \\
+i + 1
+\end{cases} \tag{162}
+$$
+
+#### Execution Cycle Function $O$
+
+The execution cycle is defined by function $O$. $O$ executes the current opcode, resulting in modification of machine state, $\boldsymbol{\mu}$ like addition or removal of items in stack.
+
+Function $O$ takes current state and outputs the next state as:
+
+$$
+O((\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \equiv (\boldsymbol{\sigma}^{\prime}, \boldsymbol{\mu}^{\prime}, A^{\prime}, I^{\prime}) \tag{164}
+$$
+
+After this execution cycle (of operating on the opcode), the stack size is changed by $\Delta$ which is number of items added subtracted with number of items added to it:
+
+$$
+\Delta \equiv \alpha_w - \delta_w \tag{165}
+$$
+
+The new stack size, $\lVert \boldsymbol{\mu}_{\mathbf{s}}^{\prime} \rVert$ is then:
+
+$$
+\lVert \boldsymbol{\mu}_{\mathbf{s}}^{\prime} \rVert \equiv \lVert \boldsymbol{\mu}_{\mathbf{s}} \rVert + \Delta \tag{166}
+$$
+
+The stack items with their new indices is updated:
+
+$$
+\forall x \in [ \alpha_w, \lVert \boldsymbol{\mu}_{\mathbf{s}}^{\prime} \rVert ] : \boldsymbol{\mu}_{\mathbf{s}}^{\prime}[x] \equiv \boldsymbol{\mu}_{\mathbf{s}}[x - \Delta] \tag{167}
+$$
+
+The available gas is reduced by whatever instruction's gas cost was:
+
+$$
+\boldsymbol{\mu}_{\mathrm{g}}^{\prime} \equiv \boldsymbol{\mu}_{\mathrm{g}} - C(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I) \tag{168}
+$$
+
+And the program counter is incremented accordingly:
+
+$$
+\boldsymbol{\mu}_{\mathrm{pc}} \equiv \begin{cases}
+J_{\text{JUMP}}(\boldsymbol{\mu}) \ \ \text{if} \ \ w = \text{JUMP} \\
+J_{\text{JUMPI}}(\boldsymbol{\mu}) \ \ \text{if} \ \ w = \text{JUMPI} \\
+N(\boldsymbol{\mu}_{\mathrm{pc}}, w) \ \ \text{otherwise}
+\end{cases} \tag{169}
+$$
+
+#### Recursive Execution Function $X$
+
+The execution function $\Xi$ is defined recursively, using function $X$. $X$ uses the function $O$ as subroutine for opcode/instruction execution.
+
+We have already seen $\Xi$ before:
+
+$$
+\Xi(\boldsymbol{\sigma}, g, A, I) \equiv (\boldsymbol{\sigma}^{\prime}, \boldsymbol{\mu}^{\prime}_{\mathrm{g}}, A^{\prime}, \mathbf{o}) \tag{144}
+$$
+
+$X$ outputs similarly with some additional elements as well, which we'll see later:
+
+$$
+(\boldsymbol{\sigma}^{\prime}, \boldsymbol{\mu}^{\prime}_{\mathrm{g}}, A^{\prime}, ... , \mathbf{o}) \equiv X((\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \tag{145}
+$$
+
+The default initial values of the state are set as:
+
+- Gas in machine state is same as available gas:
+
+  $$
+  \boldsymbol{\mu}_{\mathrm{g}} \equiv g \tag{146}
+  $$
+
+- The program counter is set to 0:
+
+  $$
+  \boldsymbol{\mu}_{\mathrm{pc}} \equiv 0 \tag{147}
+  $$
+
+- The memory is all zero bytes:
+
+  $$
+  \boldsymbol{\mu}_{\mathbf{m}} \equiv (0, 0, ...) \tag{148}
+  $$
+
+- The active number of words in memory is zero:
+
+  $$
+  \boldsymbol{\mu}_{\mathbf{i}} \equiv 0 \tag{149}
+  $$
+
+- The stack is empty:
+
+  $$
+  \boldsymbol{\mu}_{\mathbf{s}} \equiv () \tag{150}
+  $$
+
+- Any output data is empty:
+  $$
+  \boldsymbol{\mu}_{\mathbf{o}} \equiv () \tag{151}
+  $$
+
+Now we formally define $X$ which executes recursively:
+
+- If it is an exceptional halting according to the $Z$ function, the output state and returndata is empty - all else remaining unchanged:
+
+  $$
+  X((\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \equiv (\varnothing, \boldsymbol{\mu}, A, I, \varnothing) \ \ \text{if} \ \ Z(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)
+  $$
+
+- If a $\text{REVERT}$ opcode is encountered, the output state is empty, only machine state and returndata remains updated till revert:
+
+  $$
+  X((\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \equiv (\varnothing, \boldsymbol{\mu}^{\prime}, A, I, \varnothing) \ \ \text{if} \ \ w = \text{REVERT}
+  $$
+
+- If there is no revert or exception and returndata is not empty, result of $O$ appended with the returndata:
+
+  $$
+  X((\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \equiv O(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I) \cdot \mathbf{o} \ \ \text{if} \ \ \mathbf{o} \ne \varnothing
+  $$
+
+- Otherwise, $X$ is executed again with output of $O$ function as the the input for next recursion cycle:
+  $$
+  X((\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \equiv X(O(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \ \ \text{otherwise}
+  $$
+
+Combining all cases above we get:
+
+$$
+X((\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \equiv \begin{cases}
+(\varnothing, \boldsymbol{\mu}, A, I, \varnothing) \ \ \text{if} \ \ Z(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I) \\
+(\varnothing, \boldsymbol{\mu}^{\prime}, A, I, \varnothing) \ \ \text{if} \ \ w = \text{REVERT} \\
+O(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I) \cdot \mathbf{o} \ \ \text{if} \ \ \mathbf{o} \ne \varnothing \\
+X(O(\boldsymbol{\sigma}, \boldsymbol{\mu}, A, I)) \ \ \text{otherwise}
+\end{cases} \tag{152}
+$$
+
+As mentioned before, the returndata output $\mathbf{o}$ is determined by normal halting function $H$:
+
+$$
+\mathbf{o} \equiv H(\boldsymbol{\mu}, I) \tag{153}
+$$
+
+The $\cdot$ operator concatenates the item to tuple.
+
+$X$ goes through a recursive cycle until either $Z$ is true representing an exceptional halt or the output of $H$ becomes a series of bytes rather than empty set ($\mathbf{o} \ne \varnothing$) indicating a controlled halt.
+
+And this is it!
