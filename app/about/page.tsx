@@ -14,8 +14,9 @@ export default function Page() {
       </div>
       <div className="mb-4">
         Former founder and cto of a privacy-protocol startup - researched &
-        built a modular ethereum privacy protocol and a distributed compliance
-        framework for it using zero-knowledge and threshold cryptography.
+        built a modular privacy protocol on ethereum and a distributed
+        compliance framework with zero-knowledge proofs and threshold
+        cryptography.
       </div>
       <div className="mb-4">
         When not hacking - economics, finance, game theory, and non-fiction
