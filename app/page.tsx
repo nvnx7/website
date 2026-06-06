@@ -15,7 +15,7 @@ export default function Page() {
         <Link
           key="sede"
           className="flex flex-col space-y-1 mb-4"
-          href="https://arxiv.org/abs/2311.08167v4"
+          href="https://arxiv.org/pdf/2311.08167v4"
           target="_blank"
         >
           SeDe: Balancing Blockchain Privacy and Regulatory Compliance by
@@ -25,7 +25,7 @@ export default function Page() {
         <Link
           key="zkfi"
           className="flex flex-col space-y-1 mb-4"
-          href="https://arxiv.org/abs/2307.00521v4"
+          href="https://arxiv.org/pdf/2307.00521v4"
           target="_blank"
         >
           zkFi: Privacy-Preserving and Regulation Compliant Transactions using
