@@ -8,6 +8,23 @@ const works = [
     href: "https://github.com/nvnx7/winnr-fun-protocol",
   },
   {
+    name: "noble-poseidon",
+    description:
+      "poseidon and poseidon2 hash function implementation in typescript",
+    href: "https://github.com/nvnx7/noble-poseidon",
+  },
+  {
+    name: "sede",
+    description:
+      "compliance framework for tracing utxo based private transactions",
+    href: "https://github.com/nvnx7/sede-framework/tree/main/packages/core",
+  },
+  {
+    name: "zkfi",
+    description: "modular ethereum privacy protocol with defi integrations",
+    href: "https://github.com/nvnx7/zkfi-protocol",
+  },
+  {
     name: "evm-rs",
     description: "ethereum virtual machine written from scratch in rust",
     href: "https://github.com/nvnx7/evm-rs",
