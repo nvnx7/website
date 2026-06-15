@@ -1,5 +1,6 @@
 import { BlogPosts } from "app/components/posts";
-import Link from "next/link";
+import { Research } from "app/components/research";
+import { Works } from "app/components/works";
 
 export default function Page() {
   return (
@@ -11,26 +12,13 @@ export default function Page() {
       </div>
 
       <div className="my-8">
-        <h2 className="mb-4 text-xl font-bold tracking-tighter">research</h2>
-        <Link
-          key="sede"
-          className="flex flex-col space-y-1 mb-4"
-          href="https://arxiv.org/pdf/2311.08167v4"
-          target="_blank"
-        >
-          SeDe: Balancing Blockchain Privacy and Regulatory Compliance by
-          Selective De-Anonymization
-        </Link>
+        <h2 className="mb-4 text-xl font-bold tracking-tighter">works</h2>
+        <Works />
+      </div>
 
-        <Link
-          key="zkfi"
-          className="flex flex-col space-y-1 mb-4"
-          href="https://arxiv.org/pdf/2307.00521v4"
-          target="_blank"
-        >
-          zkFi: Privacy-Preserving and Regulation Compliant Transactions using
-          Zero Knowledge Proofs
-        </Link>
+      <div className="my-8">
+        <h2 className="mb-4 text-xl font-bold tracking-tighter">research</h2>
+        <Research />
       </div>
     </section>
   );
