@@ -2,6 +2,12 @@ import Link from "next/link";
 
 const works = [
   {
+    name: "winnr-fun",
+    description:
+      "solana protocol to run permissionless & fair token draft contests",
+    href: "https://github.com/nvnx7/winnr-fun-protocol",
+  },
+  {
     name: "evm-rs",
     description: "ethereum virtual machine written from scratch in rust",
     href: "https://github.com/nvnx7/evm-rs",

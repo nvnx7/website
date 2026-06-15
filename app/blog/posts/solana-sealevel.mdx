@@ -1,0 +1,149 @@
+---
+title: "Solana Sealevel For Performant Scalable Smart Contracts"
+publishedAt: "2025-11-04"
+summary: "How to exploit Solana's parallel processing capabilities for high throughput smart contracts"
+---
+
+## Introduction
+
+Solana is one of the most performant blockchains today. But that performance isn't just about hardware. It comes from a fundamentally different execution model: **Sealevel**, Solana's parallel smart contract runtime.
+
+Most Ethereum contracts run in a global sequential state machine. Every transaction waits for the one before it. Solana doesn't work that way. Sealevel processes thousands of transactions concurrently, distributing work across all available CPU cores.
+
+The catch? Parallelism doesn't happen automatically. The scheduler can only parallelize what you allow, through how you design and declare your program's accounts. This post walks through how Sealevel works under the hood and the account design patterns that let your programs scale with it.
+
+## Sealevel
+
+Sealevel is Solana's parallel smart contract runtime.
+
+On Ethereum, the EVM processes transactions one at a time inside a single global state machine. Every transaction has unrestricted access to all contract state, so there's no safe way to run two transactions concurrently. Sealevel sidesteps this entirely with one constraint: **every transaction must explicitly list all accounts it will access before execution begins**.
+
+This upfront account declaration is what makes parallelism possible. With account lists known ahead of time, Solana's scheduler can inspect every pending transaction and identify which ones share no writable accounts. Those are safe to execute simultaneously.
+
+### Account Locks
+
+Each account in a transaction is marked as either readable or writable:
+
+- **Read lock**: multiple transactions can hold a read lock on the same account at the same time
+- **Write lock**: exclusive; if two transactions both need to write to the same account, they are serialized
+
+The scheduler builds a dependency graph from these lock declarations and groups non-conflicting transactions into parallel execution batches per slot (~400ms). Transactions that form independent subgraphs in this dependency graph run concurrently across CPU threads.
+
+### Example
+
+Consider two token transfers happening at the same time:
+
+```
+Tx A: reads [mint], writes [alice_token_account]
+Tx B: reads [mint], writes [bob_token_account]
+```
+
+`Tx A` and `Tx B` both read `mint` (read locks are shared) and write to different accounts. No write conflict. The scheduler runs them in parallel.
+
+Now consider two transactions that both update a shared fee vault:
+
+```
+Tx C: writes [global_fee_vault, ...]
+Tx D: writes [global_fee_vault, ...]
+```
+
+Both hold a write lock on `global_fee_vault`. The scheduler serializes them: `Tx D` waits until `Tx C` finishes. One shared writable account is all it takes to kill parallelism between two transactions.
+
+## Designing For Parallelism
+
+Understanding account locks changes how you think about program architecture. Every shared writable account your program uses is a potential serialization point. Here are the patterns that matter most.
+
+### Avoid Global State Bottlenecks
+
+The most common mistake is a single account that every user's transaction must write to: a global counter, a shared vault, a protocol-wide config that gets mutated on every call.
+
+```rust
+// Every user tx writes to the same account, all serialized
+#[account(mut)]
+pub global_pool: Account<'info, Pool>,
+```
+
+The fix is per-user accounts, typically PDAs derived from the user's public key. Two users operating on their own PDAs have zero account overlap, so their transactions run in parallel.
+
+```rust
+#[account(
+    init_if_needed,
+    seeds = [b"user-pool", user.key().as_ref()],
+    bump,
+    payer = user,
+    space = 8 + UserPool::INIT_SPACE,
+)]
+pub user_pool: Account<'info, UserPool>,
+```
+
+Now any two users transacting at the same time run fully in parallel. The only coordination happens when they interact with a shared resource, which brings us to the next pattern.
+
+### Shard Hot Accounts
+
+Sometimes you genuinely need shared mutable state: a global fee accumulator, a total liquidity counter, an on-chain leaderboard. You can't eliminate the account, but you can shard it.
+
+Instead of one account, create N shard accounts. Each transaction is routed to a shard based on a deterministic hash of the user or transaction, typically the first byte of the user's public key mod N:
+
+```rust
+const NUM_SHARDS: u8 = 8;
+
+// on the client, pick a shard before sending the tx
+let shard_index = user_pubkey.to_bytes()[0] % NUM_SHARDS;
+```
+
+On-chain, each shard is its own PDA:
+
+```rust
+#[account(
+    seeds = [b"fee-shard", &[shard_index]],
+    bump,
+)]
+pub fee_shard: Account<'info, FeeShard>,
+```
+
+Transactions hashed to different shards never conflict. A separate aggregation instruction (run periodically or on-demand) reads all shards and computes the total. This trades read-time complexity for write-time parallelism.
+
+### Only Mark Accounts Writable When Needed
+
+Every account you mark as writable adds a potential conflict point, even if your instruction ends up not modifying it. The scheduler makes its parallelism decisions before execution, based purely on the declared account list.
+
+In Anchor, use `#[account(mut)]` only on accounts your instruction actually mutates:
+
+```rust
+// Don't do this if you're only reading config
+#[account(mut)]
+pub protocol_config: Account<'info, Config>,
+
+// Do this instead
+pub protocol_config: Account<'info, Config>,
+```
+
+This is easy to overlook when copying instruction contexts across handlers, but the parallelism cost is real under load.
+
+### Design PDAs for Isolation
+
+The derivation seeds of your PDAs directly determine which transactions conflict. A PDA derived from `[b"position", user.key()]` gives every user a unique account. A PDA derived from `[b"position"]` gives everyone the same account.
+
+Design seeds to be as specific as the isolation you need:
+
+| Seeds                                  | Isolation                          |
+| -------------------------------------- | ---------------------------------- |
+| `[b"vault"]`                           | None (all users share one account) |
+| `[b"vault", market.key()]`             | Per-market                         |
+| `[b"vault", market.key(), user.key()]` | Per-user per-market                |
+
+The more specific the seeds, the more parallelism you get. The tradeoff is that more isolated accounts mean more accounts to initialize and pass into transactions.
+
+## What Sealevel Cannot Parallelize
+
+No design pattern eliminates the fundamental constraint: two transactions that both need to write to the same account will always run one after the other.
+
+This matters most for composable DeFi. When your program CPIs into another program, any accounts that CPI writes to inherit the same write lock constraint. A chain of CPIs that all converge on a shared liquidity pool will be serialized at that pool, regardless of how well your outer program is designed.
+
+The practical implication: if your program is a thin wrapper around a hot shared resource in another protocol, your throughput is bounded by that resource, not by your program.
+
+## Conclusion
+
+Sealevel's parallelism is opt-in by design. The scheduler can only parallelize what your account declarations allow. A program with a single global writable account touched on every call is effectively sequential, no matter how fast the validator hardware is.
+
+Good Solana program design means treating your account topology as the interface to the parallel scheduler. Per-user PDAs, sharded hot accounts, and precise `mut` declarations aren't just best practices. They're what separates a program that scales from one that serializes under load.
