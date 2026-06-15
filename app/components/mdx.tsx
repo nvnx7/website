@@ -5,6 +5,7 @@ import Link from 'next/link';
 import React from 'react';
 //@ts-ignore
 import rehypeMathJax from 'rehype-mathjax';
+import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { highlight } from 'sugar-high';
 
@@ -101,9 +102,15 @@ const components = {
   Table,
 };
 
+const defaultOptions: SerializeOptions = {
+  mdxOptions: {
+    remarkPlugins: [remarkGfm],
+  },
+};
+
 const mathOptions: SerializeOptions = {
   mdxOptions: {
-    remarkPlugins: [remarkMath],
+    remarkPlugins: [remarkGfm, remarkMath],
     rehypePlugins: [rehypeMathJax],
   },
 };
@@ -113,7 +120,7 @@ export function CustomMDX(props: MDXRemoteProps & { math?: boolean }) {
     <MDXRemote
       {...props}
       components={{ ...components, ...(props.components || {}) }}
-      options={props.math ? mathOptions : undefined}
+      options={props.math ? mathOptions : defaultOptions}
     />
   );
 }
