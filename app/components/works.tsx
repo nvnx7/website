@@ -8,6 +8,12 @@ const works = [
     href: "https://github.com/nvnx7/winnr-fun-protocol",
   },
   {
+    name: "frost-babyjubjub",
+    description:
+      "frost threshold signature scheme over babyjubjub curve for private multisig wallets",
+    href: "https://github.com/nvnx7/frost-babyjubjub",
+  },
+  {
     name: "noble-poseidon",
     description:
       "poseidon and poseidon2 hash function implementation in typescript",
