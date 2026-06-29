@@ -2,10 +2,10 @@ import Link from "next/link";
 
 const works = [
   {
-    name: "winnr-fun",
+    name: "winnr",
     description:
-      "solana protocol to run permissionless & fair token draft contests",
-    href: "https://github.com/nvnx7/winnr-fun-protocol",
+      "a performant prediction market app-chain with a CLOB, native privacy and gasless transactions",
+    href: "https://github.com/nvnx7/winnr-rollup",
   },
   {
     name: "frost-babyjubjub",
