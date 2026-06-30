@@ -8,6 +8,12 @@ const works = [
     href: "https://github.com/nvnx7/winnr-rollup",
   },
   {
+    name: "nexus",
+    description:
+      "zk-based private multisig wallet using FROST threshold signature scheme",
+    href: "https://github.com/nvnx7/nexus-multisig",
+  },
+  {
     name: "frost-babyjubjub",
     description:
       "frost threshold signature scheme over babyjubjub curve for private multisig wallets",
