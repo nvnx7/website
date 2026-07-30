@@ -1,8 +1,9 @@
+import { siteName } from 'app/constants';
 import { ImageResponse } from 'next/og';
 
 export function GET(request: Request) {
   const url = new URL(request.url);
-  const title = url.searchParams.get('title') || 'Next.js Portfolio Starter';
+  const title = url.searchParams.get('title') || siteName;
 
   return new ImageResponse(
     <div tw="flex flex-col w-full h-full items-center justify-center bg-white">

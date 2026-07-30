@@ -1,11 +1,12 @@
 import { BlogPosts } from 'app/components/posts';
 import { Research } from 'app/components/research';
 import { Works } from 'app/components/works';
+import { siteName } from 'app/constants';
 
 export default function Page() {
   return (
     <section>
-      <h1 className="mb-8 text-2xl font-bold tracking-tighter">naveen sahu</h1>
+      <h1 className="mb-8 text-2xl font-bold tracking-tighter">{siteName.toLowerCase()}</h1>
       <p className="mb-4">Independent (hacker | researcher).</p>
       <div className="my-8">
         <BlogPosts />

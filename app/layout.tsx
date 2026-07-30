@@ -7,20 +7,20 @@ import type { Metadata } from 'next';
 import { ThemeProvider } from 'next-themes';
 import Footer from './components/footer';
 import { Navbar } from './components/nav';
-import { baseUrl } from './sitemap';
+import { baseUrl, siteDescription, siteName } from './constants';
 
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl),
   title: {
-    default: 'Naveen Sahu',
-    template: '%s | Naveen Sahu',
+    default: siteName,
+    template: `%s | ${siteName}`,
   },
-  description: "Naveen Sahu's website.",
+  description: siteDescription,
   openGraph: {
-    title: 'Naveen Sahu',
-    description: "Naveen Sahu's website.",
+    title: siteName,
+    description: siteDescription,
     url: baseUrl,
-    siteName: 'Naveen Sahu',
+    siteName,
     locale: 'en_US',
     type: 'website',
   },

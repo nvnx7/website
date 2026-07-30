@@ -1,6 +1,6 @@
 import { formatDate, getBlogPosts } from 'app/blog/utils';
 import { CustomMDX } from 'app/components/mdx';
-import { baseUrl } from 'app/sitemap';
+import { baseUrl, siteName } from 'app/constants';
 import { notFound } from 'next/navigation';
 
 export async function generateStaticParams() {
@@ -74,7 +74,7 @@ export default async function Blog({ params }) {
             url: `${baseUrl}/blog/${post.slug}`,
             author: {
               '@type': 'Person',
-              name: 'My Portfolio',
+              name: siteName,
             },
           }),
         }}

@@ -1,3 +1,5 @@
+import { githubUrl, siteName, xUrl } from 'app/constants';
+
 function ArrowIcon() {
   return (
     // biome-ignore lint/a11y/noSvgWithoutTitle: SVG is purely decorative
@@ -19,7 +21,7 @@ export default function Footer() {
             className="flex items-center transition-all hover:text-neutral-800 dark:hover:text-neutral-100"
             rel="noopener noreferrer"
             target="_blank"
-            href="https://x.com/nvnxu"
+            href={xUrl}
           >
             <ArrowIcon />
             <p className="ml-2 h-7">x</p>
@@ -30,7 +32,7 @@ export default function Footer() {
             className="flex items-center transition-all hover:text-neutral-800 dark:hover:text-neutral-100"
             rel="noopener noreferrer"
             target="_blank"
-            href="https://github.com/nvnx7"
+            href={githubUrl}
           >
             <ArrowIcon />
             <p className="ml-2 h-7">github</p>
@@ -38,7 +40,7 @@ export default function Footer() {
         </li>
       </ul>
       <p className="mt-8 text-neutral-600 dark:text-neutral-300">
-        © {new Date().getFullYear()} Naveen Sahu.
+        © {new Date().getFullYear()} {siteName}.
       </p>
     </footer>
   );

@@ -1,6 +1,5 @@
 import { getBlogPosts } from 'app/blog/utils';
-
-export const baseUrl = 'https://nvnx.in';
+import { baseUrl } from 'app/constants';
 
 export default async function sitemap() {
   const blogs = getBlogPosts().map((post) => ({
