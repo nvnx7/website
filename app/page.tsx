@@ -1,6 +1,6 @@
-import { BlogPosts } from "app/components/posts";
-import { Research } from "app/components/research";
-import { Works } from "app/components/works";
+import { BlogPosts } from 'app/components/posts';
+import { Research } from 'app/components/research';
+import { Works } from 'app/components/works';
 
 export default function Page() {
   return (

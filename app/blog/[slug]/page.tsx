@@ -2,7 +2,6 @@ import { formatDate, getBlogPosts } from 'app/blog/utils';
 import { CustomMDX } from 'app/components/mdx';
 import { baseUrl } from 'app/sitemap';
 import { notFound } from 'next/navigation';
-import Script from 'next/script';
 
 export async function generateStaticParams() {
   const posts = getBlogPosts();
@@ -19,7 +18,7 @@ export async function generateMetadata({ params }) {
     return;
   }
 
-  const { title, publishedAt: publishedTime, summary: description, image, math } = post.metadata;
+  const { title, publishedAt: publishedTime, summary: description, image } = post.metadata;
 
   const ogImage = image ? image : `${baseUrl}/og?title=${encodeURIComponent(title)}`;
 

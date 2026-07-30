@@ -3,17 +3,20 @@ import { MDXRemote, MDXRemoteProps } from 'next-mdx-remote/rsc';
 import Image from 'next/image';
 import Link from 'next/link';
 import React from 'react';
-//@ts-ignore
+//@ts-expect-error
 import rehypeMathJax from 'rehype-mathjax';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { highlight } from 'sugar-high';
 
 function Table({ data }) {
+  // biome-ignore lint/suspicious/noArrayIndexKey: table data is static content parsed from MDX, never reordered
   const headers = data.headers.map((header, index) => <th key={index}>{header}</th>);
   const rows = data.rows.map((row, index) => (
+    // biome-ignore lint/suspicious/noArrayIndexKey: table data is static content parsed from MDX, never reordered
     <tr key={index}>
       {row.map((cell, cellIndex) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: table data is static content parsed from MDX, never reordered
         <td key={cellIndex}>{cell}</td>
       ))}
     </tr>
@@ -63,8 +66,8 @@ function slugify(str) {
     .trim() // Remove whitespace from both ends of a string
     .replace(/\s+/g, '-') // Replace spaces with -
     .replace(/&/g, '-and-') // Replace & with 'and'
-    .replace(/[^\w\-]+/g, '') // Remove all non-word characters except for -
-    .replace(/\-\-+/g, '-'); // Replace multiple - with single -
+    .replace(/[^\w-]+/g, '') // Remove all non-word characters except for -
+    .replace(/--+/g, '-'); // Replace multiple - with single -
 }
 
 function createHeading(level) {

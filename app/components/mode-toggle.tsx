@@ -12,7 +12,7 @@ export function ModeToggle() {
   });
 
   if (!domLoaded) {
-    return <></>;
+    return null;
   }
 
   return (
