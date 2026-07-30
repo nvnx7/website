@@ -19,6 +19,11 @@
   --sh-entity: #e25a1c;
 }
 
+html {
+  min-width: 360px;
+  color-scheme: light;
+}
+
 .dark {
   --sh-class: #4c97f8;
   --sh-identifier: white;
@@ -42,9 +47,13 @@
   }
 }
 
-html {
-  min-width: 360px;
-  color-scheme: light;
+pre::-webkit-scrollbar {
+  display: none;
+}
+
+pre {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 }
 
 .prose .anchor {
@@ -131,17 +140,10 @@ html {
 
 .prose > :first-child {
   /* Override removing top margin, causing layout shift */
+  /* biome-ignore lint/complexity/noImportantStyles: intentional override, see comment above */
   margin-top: 1.25em !important;
+  /* biome-ignore lint/complexity/noImportantStyles: intentional override, see comment above */
   margin-bottom: 1.25em !important;
-}
-
-pre::-webkit-scrollbar {
-  display: none;
-}
-
-pre {
-  -ms-overflow-style: none; /* IE and Edge */
-  scrollbar-width: none; /* Firefox */
 }
 
 /* Remove Safari input shadow on mobile */
