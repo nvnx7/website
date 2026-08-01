@@ -4,7 +4,7 @@ export function Logo({ className }: { className?: string }) {
     <svg
       xmlns="http://www.w3.org/2000/svg"
       viewBox="312 763 1424 522"
-      className={`text-black dark:text-white ${className ?? ""}`}
+      className={`text-black dark:text-white ${className ?? ''}`}
     >
       <path
         d="M 1731.8956521739133 1280.4452173913044 L 316.10434782608695 1024 L 1219.0052173913045 1280.4452173913044 L 695.4295652173913 767.5547826086956 L 1731.8956521739133 1280.4452173913044"

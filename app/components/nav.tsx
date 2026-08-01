@@ -1,16 +1,16 @@
-import Link from "next/link";
-import { Logo } from "./logo";
-import { ModeToggle } from "./mode-toggle";
+import Link from 'next/link';
+import { Logo } from './logo';
+import { ModeToggle } from './mode-toggle';
 
 const navItems = {
-  "/": {
-    name: "home",
+  '/': {
+    name: 'home',
   },
-  "/about": {
-    name: "about",
+  '/about': {
+    name: 'about',
   },
-  "/blog": {
-    name: "blog",
+  '/blog': {
+    name: 'blog',
   },
 };
 
