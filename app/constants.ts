@@ -1,4 +1,4 @@
-export const baseUrl = 'https://nvnx.in';
+export const baseUrl = 'https://www.nvnx.in';
 
 export const siteName = 'Naveen Sahu';
 export const siteDescription = "Naveen Sahu's website.";
