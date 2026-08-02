@@ -20,7 +20,9 @@ export async function generateMetadata({ params }) {
 
   const { title, publishedAt: publishedTime, summary: description, image } = post.metadata;
 
-  const ogImage = image ? image : `${baseUrl}/og.png`;
+  const ogImage = image
+    ? { url: image, alt: title }
+    : { url: `${baseUrl}/og.png`, width: 1200, height: 630, type: 'image/png', alt: title };
 
   return {
     title,
@@ -31,17 +33,13 @@ export async function generateMetadata({ params }) {
       type: 'article',
       publishedTime,
       url: `${baseUrl}/blog/${post.slug}`,
-      images: [
-        {
-          url: ogImage,
-        },
-      ],
+      images: [ogImage],
     },
     twitter: {
       card: 'summary_large_image',
       title,
       description,
-      images: [ogImage],
+      images: [ogImage.url],
     },
   };
 }
